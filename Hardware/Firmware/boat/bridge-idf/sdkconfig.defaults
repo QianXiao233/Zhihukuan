@@ -1,0 +1,39 @@
+# ============================================================================
+# 桥接板 boat-bridge —— ESP32-S3-LCD-1.47
+# 目标芯片：没有这一行 idf.py 会退回默认 esp32，编出不可用的固件
+# ============================================================================
+CONFIG_IDF_TARGET="esp32s3"
+
+# 屏幕为 ST7789T 172x320，横屏使用；本项目未用 PSRAM，故不启用 SPIRAM
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+
+# ---------------- LVGL ----------------
+CONFIG_LV_MEM_SIZE_KILOBYTES=48
+CONFIG_LV_USE_USER_DATA=y
+# 刷新周期保持默认 30 ms：曾把它降到 16 ms 并与 5 ms 主循环叠加，
+# 导致 IDLE0 饿死、触发 task watchdog（有实测记录）
+CONFIG_LV_DISP_DEF_REFR_PERIOD=30
+# 只用 12(正文) / 14(LVGL 默认字体) / 18(标题)
+CONFIG_LV_FONT_MONTSERRAT_12=y
+CONFIG_LV_FONT_MONTSERRAT_14=y
+CONFIG_LV_FONT_MONTSERRAT_16=n
+CONFIG_LV_FONT_MONTSERRAT_18=y
+# 界面自绘，不需要 LVGL 自带 demo（还会拖入额外字体依赖）
+CONFIG_LV_USE_DEMO_WIDGETS=n
+CONFIG_LV_DEMO_WIDGETS_SLIDESHOW=n
+CONFIG_LV_USE_DEMO_KEYPAD_AND_ENCODER=n
+CONFIG_LV_USE_DEMO_BENCHMARK=n
+CONFIG_LV_USE_DEMO_STRESS=n
+CONFIG_LV_USE_DEMO_MUSIC=n
+
+# ---------------- 诊断：CPU 占用统计 ----------------
+# 开启后可用 ulTaskGetIdleRunTimePercentForCore() 读取各核空闲率，
+# 从而算出 CPU 占用。用途：判断"芯片发烫"是不是软件在空转引起的。
+CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
+CONFIG_FREERTOS_USE_TRACE_FACILITY=y
+
+# ---------------- 降功耗（针对芯片发热） ----------------
+# 实测：CPU 占用仅 10%/1%，但结温 78 °C —— 说明热量来自射频与供电，不是计算。
+# 既然 CPU 大量空闲，就没必要跑 160 MHz；80 MHz 足够本应用（透传 + 4 Hz 刷屏）。
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_80=y

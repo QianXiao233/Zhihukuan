@@ -1,0 +1,112 @@
+server:
+  port: 8085
+  forward-headers-strategy: framework
+  address: 0.0.0.0
+
+spring:
+  application:
+    name: dam-ai-server
+  config:
+    # 让 backend/.env 真正生效（模板见 .env.example）；文件缺失不影响启动
+    import: optional:file:.env[.properties]
+  servlet:
+    multipart:
+      # 多模态问答：单文件 10MB，整请求 40MB
+      max-file-size: 10MB
+      max-request-size: 40MB
+  datasource:
+    # 平台后端（登录/坝体/设备/参数台账）的 MySQL 库
+    url: ${DB_URL:jdbc:mysql://localhost:3306/dam?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8&allowPublicKeyRetrieval=true}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      # 关键：MySQL 未启动时不阻塞启动，也不建立任何连接，
+      # 保证 Dify 问答 / 语音识别在没有数据库的机器上照常可用。
+      # 池在第一次真正需要 SQL 时才去连库，失败只影响平台接口。
+      initialization-fail-timeout: -1
+      connection-timeout: 5000
+      maximum-pool-size: 10
+      pool-name: platform-pool
+  # 水情时序数据存 MongoDB（库名 zhka-db，集合 water_readings）。
+  # 注意：URI 路径里必须带库名（/zhka-db），否则 Spring Data 启动时报
+  # "Database name must not be empty"；authSource 指向存放该账号的库。
+  # 连接串必须由环境变量 MONGO_URI（或 backend/.env）提供，凭据不写入版本库；
+  # 未配置时回落到本机无认证实例，仅用于本地开发。
+  data:
+    mongodb:
+      uri: "${MONGO_URI:mongodb://localhost:27017/zhka-db?connectTimeoutMS=3000&serverSelectionTimeoutMS=3000&socketTimeoutMS=15000}"
+      # 索引在首次写入时懒创建（见 WaterReadingQueryRepository#ensureIndexes），
+      # 不走启动时自动建索引，避免 MongoDB 未启动拖慢应用启动
+      auto-index-creation: false
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+
+reservoir:
+  # 密钥只从环境变量 DIFY_API_KEY（或 backend/.env）读取，不写入版本库
+  dify:
+    api-base: ${DIFY_API_BASE:https://dify.qianxiao.xin/v1}
+    api-key: ${DIFY_API_KEY:}
+    user: ${DIFY_USER:reservoir-user}
+    # 超时（秒）
+    timeout: ${DIFY_TIMEOUT:120}
+  # 本地 FunASR 服务（可选，未启动时 /api/asr 返回空文本）
+  asr:
+    base-url: ${ASR_BASE_URL:http://127.0.0.1:8001}
+    enabled: ${ASR_ENABLED:true}
+  # 语音合成方式（浏览器原生为主，阿里云预留）
+  tts:
+    provider: ${TTS_PROVIDER:browser}
+  # 消息推送：请求地址 = base-url + "/" + token（GET/POST，参数 title + content）
+  # token 的正常维护入口是管理页「系统设置 → 推送与告警」（存 MySQL platform_setting）。
+  # 这里的 PUSH_TOKEN 只是兜底：数据库没配置时才会用到。
+  push:
+    enabled: ${PUSH_ENABLED:true}
+    # 接口基础地址（不含 token），一般不用改
+    base-url: ${PUSH_BASE_URL:https://push.showdoc.com.cn/server/api/push}
+    # 单次推送超时（秒）
+    timeout: ${PUSH_TIMEOUT:5}
+    # 兜底 token（可选，一般不填；管理页配置优先）
+    token: ${PUSH_TOKEN:}
+  # 实时阈值告警：MQTT 读数越界时推送，同一指标受冷却时间约束
+  alert:
+    enabled: ${ALERT_ENABLED:true}
+    # 同一指标两次推送的最小间隔（分钟），0 表示不限制
+    cooldown-minutes: ${ALERT_COOLDOWN_MINUTES:10}
+    # 登录异常告警按账号维度的冷却时间（分钟）
+    login-cooldown-minutes: ${LOGIN_ALERT_COOLDOWN_MINUTES:5}
+  # 平台后端：登录鉴权 / 坝体设备台账 / MQTT 水情采集
+  platform:
+    # 置 false 可整体关闭 MQTT 订阅与数据库写入（纯问答演示）
+    enabled: ${PLATFORM_ENABLED:true}
+    # 展示用站点名，出现在告警推送与导出文件名里
+    station-name: ${STATION_NAME:水库监测站}
+    # 平台时区：无时区的时间参数、CSV、推送时间都按它解释
+    zone-id: ${PLATFORM_ZONE_ID:Asia/Shanghai}
+    # JWT 签名密钥（至少 32 字节）。留空则启动时生成随机密钥（重启后需重新登录）；
+    # 生产环境务必通过环境变量或 backend/.env 配置固定值
+    jwt-secret: ${JWT_SECRET:}
+    mqtt:
+      enabled: ${MQTT_ENABLED:true}
+      # 形如 tcp://81.70.63.53:1883；broker 与本服务同机（含 Docker 发布端口）时用 tcp://127.0.0.1:1883，
+      # 走公网 IP 连自己会因 NAT 回流/容器 DNAT 不通。
+      # 不要写 localhost：部分机器 /etc/hosts 只把 localhost 解析到 ::1，会绕到 Docker 的 IPv6 转发上
+      broker: ${MQTT_BROKER:tcp://127.0.0.1:1883}
+      client-id: ${MQTT_CLIENT_ID:JavaService}
+      # EMQX 开启认证后必填；留空为匿名连接
+      username: ${MQTT_USERNAME:}
+      password: ${MQTT_PASSWORD:}
+      topic: ${MQTT_TOPIC:rtu/status}
+      # 最新一条数据落库的间隔（秒）：默认 10 秒一条水情记录
+      # 注意：旧版本这里是分钟（save-interval-minutes / MQTT_SAVE_INTERVAL），
+      # 升级后旧变量不再生效，若曾在 .env 里配过请改为 MQTT_SAVE_INTERVAL_SECONDS
+      save-interval-seconds: ${MQTT_SAVE_INTERVAL_SECONDS:10}
+
+logging:
+  level:
+    root: INFO
+    # 与基础包 com.zhka 保持一致（原写作 cn.reservoir，实际不生效）
+    com.zhka: DEBUG

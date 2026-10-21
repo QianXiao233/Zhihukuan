@@ -1,0 +1,146 @@
+:root {
+  /* ═══════════ 政务 × 海洋 色板 ═══════════ */
+
+  /* 海面底色：由浅入深的青蓝层次 */
+  --page-bg-top: #062a4d;
+  --page-bg: #04203e;
+  --page-bg-deep: #021627;
+
+  /* 政务主色（稳重蓝）与海洋强调色（青碧） */
+  --brand: #1667d6;
+  --brand-deep: #0f3a72;
+  --ocean: #12a8c4;
+  --ocean-light: #4fd3e8;
+  --ocean-glow: #7ee8f5;
+
+  /* 玻璃拟态面板：海洋冷调半透明 */
+  --panel-bg: rgba(233, 247, 253, 0.84);
+  --panel-bg-strong: rgba(240, 250, 254, 0.92);
+  --input-bg: rgba(240, 250, 254, 0.82);
+  --panel-border: rgba(126, 232, 245, 0.42);
+
+  /* 文字 */
+  --title-color: #0b3d70;
+  --muted-color: #4a6f92;
+  --on-dark: #e8f7fd;
+  --on-dark-muted: #9fc6dd;
+
+  /* 语义色 */
+  --danger-color: #e5484d;
+  --danger-bg: rgba(229, 72, 77, 0.12);
+
+  /* 用户可调：正文字号缩放（由 FontSizeProvider 写入） */
+  --chat-font-scale: 1;
+  --chat-font-base: 14px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  /* 海洋纵深：顶部偏亮的青蓝，向底部沉淀 */
+  background:
+    radial-gradient(120% 80% at 50% -10%, rgba(79, 211, 232, 0.22), transparent 60%),
+    linear-gradient(180deg, var(--page-bg-top) 0%, var(--page-bg) 46%, var(--page-bg-deep) 100%);
+  background-attachment: fixed;
+  font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  /* 字号随用户设置缩放 */
+  font-size: calc(var(--chat-font-base) * var(--chat-font-scale));
+  line-height: 1.6;
+  color: var(--title-color);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+textarea {
+  font-family: inherit;
+}
+
+/* 统一细滚动条，避免破坏玻璃面板观感 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(18, 168, 196, 0.28);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(18, 168, 196, 0.48);
+}
+
+/* ─────────── 通用玻璃面板 ─────────── */
+.glass-panel {
+  background: var(--panel-bg);
+  backdrop-filter: blur(16px) saturate(1.25);
+  -webkit-backdrop-filter: blur(16px) saturate(1.25);
+  border: 1px solid var(--panel-border);
+  border-radius: 18px;
+  box-shadow:
+    0 10px 32px rgba(2, 22, 39, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+/* 右侧边栏的卡片 */
+.panel-card {
+  background: var(--panel-bg);
+  backdrop-filter: blur(16px) saturate(1.25);
+  -webkit-backdrop-filter: blur(16px) saturate(1.25);
+  border: 1px solid var(--panel-border);
+  border-radius: 18px;
+  padding: 12px 14px 14px;
+  box-shadow:
+    0 10px 28px rgba(2, 22, 39, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+/* 各面板统一的标题行 */
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+
+.panel-head__icon {
+  color: var(--ocean);
+  font-size: 15px;
+}
+
+.panel-head__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--title-color);
+  letter-spacing: 0.02em;
+}
+
+/* 所有正文文本跟随用户字号设置 */
+.message-bubble__text,
+.chat-page__welcome,
+.quick-tags__item,
+.hot-questions__text,
+.history-panel__title,
+.quick-links__title,
+.quick-links__desc,
+.chat-input__textarea {
+  font-size: calc(1em * var(--chat-font-scale));
+}

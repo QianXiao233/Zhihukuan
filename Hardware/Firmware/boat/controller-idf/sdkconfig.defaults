@@ -1,0 +1,13 @@
+# ============================================================================
+# 船载主控 boat-controller —— DFRobot Romeo mini ESP32-C3 (DFR1063)
+# ============================================================================
+# 没有这一行 idf.py 会退回默认 esp32，编出不可用的固件
+CONFIG_IDF_TARGET="esp32c3"
+
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+
+# USB CDC 串口输出（C3 用原生 USB-Serial-JTAG）
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# 无屏幕，不需要 LVGL

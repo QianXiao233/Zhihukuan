@@ -1,0 +1,160 @@
+/* 三栏布局：左 300px 数字人+导航 / 中自适应 / 右 300px 边栏 */
+
+.chat-page {
+  position: relative;
+  height: 100vh;
+  width: 100%;
+  padding: 16px 18px;
+  overflow: hidden;
+}
+
+.chat-page__layout {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  display: flex;
+  gap: 16px;
+  max-width: 1720px;
+  margin: 0 auto;
+}
+
+/* ── 左侧：数字人 + 页面导航 ── */
+.chat-page__aside--left {
+  flex: 0 0 300px;
+  min-width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 2px;
+}
+
+.chat-page__nav {
+  margin-top: 0;
+}
+
+/* ── 中间主区 ── */
+.chat-page__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 22px 14px;
+  overflow: hidden;
+}
+
+.chat-page__header {
+  flex: 0 0 auto;
+  padding: 0 4px 12px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid rgba(18, 168, 196, 0.18);
+}
+
+.chat-page__title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.chat-page__title {
+  margin: 0;
+  font-size: calc(1.36em * var(--chat-font-scale));
+  font-weight: 700;
+  color: var(--title-color);
+  letter-spacing: 0.02em;
+}
+
+/* 标题旁的状态圆点 */
+.chat-page__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: calc(0.82em * var(--chat-font-scale));
+  color: #1f7a4d;
+  background: rgba(53, 208, 127, 0.14);
+  border: 1px solid rgba(53, 208, 127, 0.34);
+}
+
+.chat-page__badge.is-offline {
+  color: #b03a3f;
+  background: rgba(229, 72, 77, 0.12);
+  border-color: rgba(229, 72, 77, 0.3);
+}
+
+.chat-page__badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: status-breathe 2.2s ease-in-out infinite;
+}
+
+@keyframes status-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.chat-page__welcome {
+  margin: 7px 0 0;
+  line-height: 1.7;
+  color: var(--muted-color);
+}
+
+/* ── 右侧：边栏卡片 ── */
+.chat-page__aside--right {
+  flex: 0 0 300px;
+  min-width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 2px;
+}
+
+/* ≤1500px：两侧收窄为 270px */
+@media (max-width: 1500px) {
+  .chat-page__aside--left,
+  .chat-page__aside--right {
+    flex-basis: 270px;
+    min-width: 270px;
+  }
+}
+
+/* ≤1366px：进一步收窄为 250px */
+@media (max-width: 1366px) {
+  .chat-page {
+    padding: 12px;
+  }
+
+  .chat-page__layout {
+    gap: 12px;
+  }
+
+  .chat-page__aside--left,
+  .chat-page__aside--right {
+    flex-basis: 250px;
+    min-width: 250px;
+  }
+
+  .chat-page__main {
+    padding: 16px 16px 12px;
+  }
+}
+
+/* ≤1100px：隐藏两侧，仅保留中间对话区 */
+@media (max-width: 1100px) {
+  .chat-page__aside--left,
+  .chat-page__aside--right {
+    display: none;
+  }
+}

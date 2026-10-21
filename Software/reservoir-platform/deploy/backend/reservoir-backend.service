@@ -1,0 +1,40 @@
+[Unit]
+Description=Reservoir platform backend (Spring Boot, 127.0.0.1:8085)
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www
+Group=www
+
+# 关键：jar 与 .env 都放在这个目录。
+# application.yml 里是 spring.config.import: optional:file:.env[.properties]，
+# 相对路径按"进程工作目录"解析，WorkingDirectory 决定 .env 从哪读。
+WorkingDirectory=/www/wwwroot/zhka/backend
+
+# 可选：也可以不用 .env，直接把变量写进这里（优先级高于 .env）
+# 格式与 .env 相同：KEY=VALUE，不能有 export，不要加引号
+# EnvironmentFile=/www/wwwroot/zhka/backend/.env
+
+ExecStart=/usr/bin/java -Xms256m -Xmx512m \
+          -jar /www/wwwroot/zhka/backend/dam-server-2.0.1.jar \
+          --server.address=127.0.0.1
+
+# 若 .env 不放在工作目录，改用显式绝对路径（systemd 不做通配，方括号是安全的）：
+# ExecStart=/usr/bin/java -jar /www/wwwroot/zhka/backend/dam-server-2.0.1.jar \
+#           --server.address=127.0.0.1 \
+#           --spring.config.import=optional:file:/etc/reservoir/.env[.properties]
+
+Restart=on-failure
+RestartSec=5s
+# JVM 收到 SIGTERM 正常退出，别让 systemd 记成失败
+SuccessExitStatus=143
+LimitNOFILE=65535
+
+# JVM 直接写文件；若想统一进 journald，删掉这两行即可
+StandardOutput=append:/www/wwwlogs/reservoir-backend.log
+StandardError=append:/www/wwwlogs/reservoir-backend.log
+
+[Install]
+WantedBy=multi-user.target

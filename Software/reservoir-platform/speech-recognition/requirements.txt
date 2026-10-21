@@ -1,0 +1,5 @@
+funasr
+torch
+fastapi
+uvicorn
+python-multipart

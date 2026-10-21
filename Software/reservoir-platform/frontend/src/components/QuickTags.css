@@ -1,0 +1,58 @@
+/* 「大家都在问」标签 */
+
+.quick-tags {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 4px 12px;
+  flex-wrap: wrap;
+}
+
+.quick-tags__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: calc(0.9em * var(--chat-font-scale));
+  font-weight: 600;
+  color: var(--title-color);
+  white-space: nowrap;
+  opacity: 0.85;
+}
+
+.quick-tags__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quick-tags__item {
+  border: 1px solid rgba(18, 168, 196, 0.34);
+  background: rgba(240, 250, 254, 0.72);
+  color: #12557f;
+  padding: 5px 13px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.22s ease;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.quick-tags__item:hover {
+  /* 悬停转为海洋青碧渐变 */
+  background: linear-gradient(135deg, var(--ocean-light), var(--ocean));
+  border-color: rgba(79, 211, 232, 0.9);
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(18, 168, 196, 0.32);
+}
+
+.quick-tags__item:active {
+  transform: translateY(0);
+}
+
+@media (max-width: 1366px) {
+  .quick-tags__label {
+    display: none;
+  }
+}

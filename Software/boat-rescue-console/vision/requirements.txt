@@ -1,0 +1,15 @@
+# 智护库安 —— 全局视觉定位 依赖
+#
+# 安装：
+#     pip install -r requirements.txt
+#
+# 说明：
+#   只有 --simulate（无相机链路验证）不需要安装任何东西，纯标准库即可运行。
+#   一旦要用真实相机（--calibrate / 正常定位 / pick_hsv），就必须装 OpenCV。
+
+opencv-python>=4.7        # ArUco 检测、HSV 分割、单应性、窗口交互
+numpy>=1.24               # 矩阵运算（纯 numpy 已内建单应性回退实现，但相机路径依赖 OpenCV）
+
+# 注意：本程序**不使用 pyserial**。
+# 串口由 Node 服务（serial-service/index.js）统一持有，Python 只通过 HTTP POST 上报坐标。
+# 这样网页与视觉程序可以同时运行，不会争抢串口。

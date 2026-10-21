@@ -1,0 +1,194 @@
+/* 对话气泡：用户靠右（政务蓝渐变 + 白字）、AI 靠左（海洋冷白 + 青蓝边） */
+
+.message-bubble {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+  animation: bubble-in 0.28s ease both;
+}
+
+.message-bubble.is-user {
+  flex-direction: row-reverse;
+}
+
+@keyframes bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-bubble__avatar {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  color: #fff;
+  /* AI：海洋青碧渐变 */
+  background: linear-gradient(140deg, var(--ocean-light), var(--ocean));
+  box-shadow: 0 4px 12px rgba(18, 168, 196, 0.32);
+}
+
+.message-bubble.is-user .message-bubble__avatar {
+  /* 用户：政务深蓝渐变 */
+  background: linear-gradient(140deg, #1b5aa8, var(--brand-deep));
+  box-shadow: 0 4px 12px rgba(11, 61, 112, 0.32);
+}
+
+.message-bubble__body {
+  max-width: 76%;
+  min-width: 0;
+}
+
+.message-bubble.is-user .message-bubble__body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.message-bubble__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+  padding: 0 4px;
+  font-size: calc(0.86em * var(--chat-font-scale));
+  color: var(--muted-color);
+}
+
+.message-bubble.is-user .message-bubble__meta {
+  flex-direction: row-reverse;
+}
+
+.message-bubble__role {
+  font-weight: 600;
+}
+
+.message-bubble__time {
+  opacity: 0.72;
+}
+
+.message-bubble__text {
+  padding: 11px 14px;
+  border-radius: 14px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* AI 助手：海洋冷白底 + 青碧边 */
+.message-bubble.is-assistant .message-bubble__text {
+  background: var(--panel-bg-strong);
+  border: 1px solid rgba(18, 168, 196, 0.3);
+  border-top-left-radius: 4px;
+  color: #123f66;
+  box-shadow: 0 4px 16px rgba(2, 22, 39, 0.1);
+}
+
+/* 用户：政务蓝渐变底 + 白字 */
+.message-bubble.is-user .message-bubble__text {
+  background: linear-gradient(140deg, #17569f, var(--brand));
+  border: 1px solid rgba(22, 103, 214, 0.4);
+  border-top-right-radius: 4px;
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(15, 58, 114, 0.28);
+}
+
+/* 安全警示：红色高亮 */
+.message-bubble__danger {
+  color: var(--danger-color);
+  background: var(--danger-bg);
+  border-radius: 4px;
+  padding: 0 3px;
+  font-weight: 600;
+}
+
+.message-bubble.is-user .message-bubble__danger {
+  color: #ffe1e3;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* ─────────── 消息附带的图片 / 文档 ─────────── */
+
+.message-bubble__attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.message-bubble.is-user .message-bubble__attachments {
+  justify-content: flex-end;
+}
+
+.message-bubble__image {
+  max-width: 200px;
+  max-height: 160px;
+  border-radius: 10px;
+  border: 1px solid rgba(18, 168, 196, 0.32);
+  object-fit: cover;
+  cursor: zoom-in;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.message-bubble__image:hover {
+  transform: scale(1.02);
+  box-shadow: 0 6px 18px rgba(2, 22, 39, 0.24);
+}
+
+.message-bubble__file {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px;
+  border-radius: 10px;
+  background: rgba(18, 168, 196, 0.1);
+  border: 1px solid rgba(18, 168, 196, 0.28);
+  font-size: calc(0.86em * var(--chat-font-scale));
+  color: #12496f;
+  max-width: 240px;
+}
+
+.message-bubble__file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-bubble__file-size {
+  flex: 0 0 auto;
+  opacity: 0.7;
+}
+
+/* AI 触发的页面跳转提示按钮 */
+.message-bubble__navigate {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 9px;
+  padding: 7px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(79, 211, 232, 0.55);
+  background: linear-gradient(135deg, rgba(79, 211, 232, 0.18), rgba(18, 168, 196, 0.14));
+  color: #0e5c7e;
+  font-size: calc(0.88em * var(--chat-font-scale));
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.22s ease;
+}
+
+.message-bubble__navigate:hover {
+  background: linear-gradient(135deg, var(--ocean-light), var(--ocean));
+  border-color: rgba(79, 211, 232, 0.95);
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(18, 168, 196, 0.34);
+}

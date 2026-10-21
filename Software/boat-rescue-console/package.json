@@ -1,0 +1,28 @@
+{
+  "name": "zhihuku-an-rescue-console",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"npm:server\" \"vite --host 127.0.0.1\"",
+    "server": "node serial-service/index.js",
+    "build": "vite build",
+    "test:protocol": "node serial-service/protocol.test.js",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "janus-gateway": "^1.4.1",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "serialport": "^13.0.0",
+    "vite": "^6.0.0",
+    "webrtc-adapter": "^9.0.6",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0",
+    "playwright": "^1.63.0"
+  }
+}

@@ -1,0 +1,71 @@
+/* 右侧热门问题 */
+
+.hot-questions {
+  flex: 0 0 auto;
+}
+
+.hot-questions__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hot-questions__item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 9px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.hot-questions__item:hover {
+  background: rgba(18, 168, 196, 0.12);
+  transform: translateX(2px);
+}
+
+.hot-questions__rank {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted-color);
+  background: rgba(11, 61, 112, 0.1);
+}
+
+.hot-questions__rank.is-top {
+  color: #fff;
+  background: linear-gradient(140deg, var(--ocean-light), var(--ocean));
+}
+
+.hot-questions__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: #12557f;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hot-questions__heat {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: calc(0.79em * var(--chat-font-scale));
+  color: #e8894a;
+  opacity: 0.9;
+}

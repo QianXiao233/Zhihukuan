@@ -1,0 +1,140 @@
+# ============================================================
+# 智护库安 (Zhihukuan) —— 版本库忽略规则
+# 原则：只提交源码、配置模板与文档；依赖、编译产物、密钥一律不入库。
+# ============================================================
+
+# ---------- 密钥与环境变量（务必不要提交） ----------
+# 真实密钥放在各处的 .env 中，仓库只保留 .env.example 模板
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# ---------- 操作系统与编辑器 ----------
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+.idea/
+.vscode/
+.vs/
+*.iml
+*.ipr
+*.iws
+*.suo
+*.user
+*.swp
+*.swo
+*~
+*.bak
+*.orig
+*.rej
+
+# ---------- 本机工具目录 ----------
+# dsh 项目记忆与沙箱权限修复报告，属于本机运行痕迹
+.dsh-project-memory/
+_dsh-acl-recovery/
+.dsh/
+
+# ---------- 日志与临时文件 ----------
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.tmp
+*.temp
+*.cache
+.cache/
+
+# ---------- Node.js / 前端 ----------
+node_modules/
+dist/
+dist-ssr/
+.vite/
+.turbo/
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+blob-report/
+*.tsbuildinfo
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+*.egg-info/
+
+# ---------- Java / Maven ----------
+target/
+*.class
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# ---------- 通用编译产物 ----------
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+*.o
+*.obj
+*.d
+*.a
+*.lib
+*.elf
+*.map
+*.hex
+*.bin
+*.axf
+*.lst
+
+# ---------- ESP-IDF ----------
+managed_components/
+sdkconfig.old
+*.pyc
+build-*/
+flash_args
+
+# ---------- 部署与打包产物 ----------
+# 已构建的后端 jar 包与前端静态产物通过 CI/本地构建生成
+deploy/_upload/
+*.jar
+!**/maven-wrapper.jar
+*.war
+*.zip
+*.tar.gz
+*.7z
+*.rar
+
+# ---------- 数据集与模型权重 ----------
+# 大体积权重与训练产物不入库，请通过文档说明的下载方式获取
+*.onnx
+*.pt
+*.pth
+*.ckpt
+*.h5
+*.safetensors
+*.bin.*
+models/
+weights/
+datasets/

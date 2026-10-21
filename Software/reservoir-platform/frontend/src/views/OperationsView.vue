@@ -1,0 +1,28 @@
+<template>
+  <ViewShell title="运行与审计" tag="平台运维" :icon="SafetyCertificateOutlined">
+    <div class="ops-actions"><button :class="{active: tab === 'runtime'}" @click="tab='runtime'">运行状态</button><button v-if="admin" :class="{active: tab === 'audit'}" @click="tab='audit'; loadAudit()">操作日志</button><button class="refresh" @click="refresh">刷新</button></div>
+    <p v-if="error" class="error-box" role="alert">{{ error }}</p>
+    <section v-if="tab === 'runtime'" class="view-card">
+      <h2 class="view-card__title">后端与数据库状态</h2>
+      <p v-if="!runtime" class="muted">{{ loading ? '正在检测…' : '暂时无法读取运行状态' }}</p>
+      <template v-else><div class="runtime-grid"><article><span>MySQL</span><strong>{{ runtime.database ? '连接正常' : '连接异常' }}</strong></article><article><span>后端运行时长</span><strong>{{ Math.floor(runtime.uptimeSeconds / 60) }} 分钟</strong></article><article><span>设备台账</span><strong>{{ runtime.deviceCount }} 台</strong></article><article><span>水情记录</span><strong>{{ runtime.waterLogCount }} 条</strong></article></div><dl><dt>服务检测时间</dt><dd>{{ formatTime(runtime.serverTime) }}</dd><dt>最近落库时间</dt><dd>{{ formatTime(runtime.latestCollection) }}</dd><dt>消息总数</dt><dd>{{ runtime.notificationCount }} 条</dd></dl><p class="muted">此处检测后端和数据库。MQTT 及船载视频的实际连接状态请在实时监测、无人艇中心查看。</p></template>
+    </section>
+    <section v-else class="view-card"><form class="audit-filter" @submit.prevent="page=1; loadAudit()"><input v-model.trim="query" aria-label="搜索操作日志" placeholder="搜索操作人或接口"/><button>查询</button><span>记录设备、参数、账号及数据维护的变更结果</span></form><div class="table-scroll"><table><thead><tr><th>时间</th><th>操作人</th><th>操作内容</th><th>对象编号</th><th>结果</th></tr></thead><tbody><tr v-for="row in logs" :key="row.id"><td>{{ formatTime(row.createTime) }}</td><td>{{ row.username }}</td><td>{{ actionText(row.action) }}</td><td>{{ row.targetId || '—' }}</td><td><span :class="row.success ? 'success' : 'failed'">{{ row.success ? '成功' : '失败' }}</span></td></tr><tr v-if="!logs.length"><td colspan="5" class="empty">暂无操作日志</td></tr></tbody></table></div><div class="pagination"><span>共 {{ total }} 条 · 第 {{ page }} 页</span><button :disabled="page <= 1" @click="page--; loadAudit()">上一页</button><button :disabled="page * 20 >= total" @click="page++; loadAudit()">下一页</button></div></section>
+  </ViewShell>
+</template>
+<script setup>
+import { ref, onMounted } from 'vue'
+import { SafetyCertificateOutlined } from '@ant-design/icons-vue'
+import { getRuntime, listAudit } from '../api/manageApi.js'
+import ViewShell from './ViewShell.vue'
+const level=Number(localStorage.getItem('level') ?? 1); const admin=level===0||level>=3
+const tab=ref('runtime'),runtime=ref(null),logs=ref([]),query=ref(''),page=ref(1),total=ref(0),error=ref(''),loading=ref(false)
+const formatTime=value=>value?new Date(value).toLocaleString('zh-CN',{hour12:false}):'暂无记录'
+function actionText(path){const parts=path.split('/');return ({device:'设备',param:'监测参数',dam:'库区档案',user:'账号',data:'水情数据'}[parts[3]]||parts[3])+' · '+({add:'新增',update:'编辑',delete:'删除',password:'修改密码','clean-before':'清理历史记录'}[parts[4]]||parts[4])}
+async function loadAudit(){error.value='';try{const result=await listAudit(page.value,query.value);logs.value=result.data.rows;total.value=result.data.total}catch(e){error.value=e.message}}
+async function refresh(){if(tab.value==='audit')return loadAudit();loading.value=true;error.value='';try{runtime.value=(await getRuntime()).data}catch(e){error.value=e.message}finally{loading.value=false}}
+onMounted(refresh)
+</script>
+<style scoped>
+.ops-actions{display:flex;gap:8px;margin-bottom:16px}button{height:34px;border:1px solid #dce8f0;background:#fff;color:#54738b;padding:0 14px;border-radius:7px;font:inherit;font-size:12px;cursor:pointer}button.active{background:#1679d1;color:white;border-color:#1679d1}button:disabled{opacity:.45;cursor:not-allowed}.refresh{margin-left:auto}.runtime-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:22px}.runtime-grid article{padding:18px;background:#f6fafc;border:1px solid #e1ebf3;border-radius:10px}.runtime-grid span{display:block;color:#7d95a6;font-size:12px}.runtime-grid strong{display:block;margin-top:8px;color:#245a7e;font-size:20px}dl{display:grid;grid-template-columns:140px 1fr;gap:12px;font-size:13px}dt{color:#8396a5}dd{margin:0;color:#345975}.muted{color:#8499a9;font-size:12px}.error-box{background:#fff1ef;color:#bd5350;padding:12px;border-radius:8px;font-size:12px}.audit-filter{display:flex;align-items:center;gap:10px;margin-bottom:18px}.audit-filter input{height:34px;border:1px solid #dce8f0;border-radius:7px;padding:0 10px}.audit-filter span{font-size:11px;color:#889aa8}.table-scroll{overflow:auto}table{width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap}th{text-align:left;background:#f5f9fb;color:#839aaa;font-weight:500}th,td{padding:13px 10px;border-bottom:1px solid #edf2f5}td{color:#55758d}.success{color:#159a78}.failed{color:#cf625c}.empty{text-align:center;padding:35px;color:#8b9eac}.pagination{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:18px;font-size:12px;color:#8297a7}@media(max-width:700px){.runtime-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.audit-filter{flex-wrap:wrap}.audit-filter span{width:100%}dl{grid-template-columns:100px 1fr}}
+</style>

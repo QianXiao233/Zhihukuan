@@ -1,0 +1,60 @@
+/* 右侧快捷跳转卡片 */
+
+.quick-links {
+  flex: 0 0 auto;
+}
+
+.quick-links__grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quick-links__card {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  align-items: center;
+  padding: 9px 11px;
+  border-radius: 12px;
+  border: 1px solid rgba(18, 168, 196, 0.26);
+  background: rgba(240, 250, 254, 0.68);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.22s ease;
+}
+
+.quick-links__card:hover {
+  border-color: rgba(79, 211, 232, 0.7);
+  background: rgba(240, 250, 254, 0.95);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(18, 168, 196, 0.22);
+}
+
+.quick-links__icon {
+  grid-row: 1 / span 2;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  font-size: 17px;
+  color: #fff;
+  background: linear-gradient(140deg, var(--ocean-light), var(--ocean));
+  box-shadow: 0 4px 12px rgba(18, 168, 196, 0.3);
+}
+
+.quick-links__title {
+  font-weight: 600;
+  color: var(--title-color);
+}
+
+.quick-links__desc {
+  font-size: calc(0.82em * var(--chat-font-scale));
+  color: var(--muted-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

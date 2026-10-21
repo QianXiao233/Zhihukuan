@@ -1,0 +1,11 @@
+import { SerialPort } from 'serialport';
+const sp = new SerialPort({ path: 'COM12', baudRate: 115200, autoOpen: false });
+await new Promise((r) => sp.open(() => r()));
+sp.set({ dtr: false, rts: true }, () => {});
+const chunks = [];
+sp.on('data', (d) => chunks.push(d.toString('utf8')));
+await new Promise((r) => setTimeout(r, 9000));
+const t = chunks.join('');
+console.log(`收到 ${t.length} 字符`);
+t.split(/\r?\n/).filter((l) => l.trim()).slice(0, 25).forEach((l) => console.log('  ' + l.slice(0, 110)));
+await new Promise((r) => sp.close(() => r()));
