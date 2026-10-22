@@ -43,7 +43,7 @@ function pushData() {
 async function init() {
   if (!host.value) return
   try {
-    scene = createDamScene({ container: host.value, quality: props.quality })
+    scene = createDamScene({ container: host.value, quality: props.quality, showCameraPoints: false })
     pushData()
     scene.start()
 

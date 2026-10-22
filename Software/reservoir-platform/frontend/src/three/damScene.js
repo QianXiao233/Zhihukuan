@@ -51,7 +51,7 @@ const FLY_DURATION = 1.15
 const TOUR_INTERVAL = 7.5
 const WATER_BASE_SIZE = 300
 
-export function createDamScene({ container, onFrame, quality = 'auto' } = {}) {
+export function createDamScene({ container, onFrame, quality = 'auto', showCameraPoints = true } = {}) {
   const host = container
   if (!host) throw new Error('createDamScene: 需要 container')
 
@@ -341,30 +341,32 @@ export function createDamScene({ container, onFrame, quality = 'auto' } = {}) {
     }
   }
 
-  for (const cam of cameras) {
-    const group = new THREE.Group()
-    group.position.set(cam.position[0], cam.position[1], cam.position[2])
+  if (showCameraPoints) {
+    for (const cam of cameras) {
+      const group = new THREE.Group()
+      group.position.set(cam.position[0], cam.position[1], cam.position[2])
 
-    const dot = new THREE.Mesh(
-      pointGeo,
-      new THREE.MeshBasicMaterial({ color: 0x4fd1ff, transparent: true, opacity: 0.95 }),
-    )
-    group.add(dot)
+      const dot = new THREE.Mesh(
+        pointGeo,
+        new THREE.MeshBasicMaterial({ color: 0x4fd1ff, transparent: true, opacity: 0.95 }),
+      )
+      group.add(dot)
 
-    const ring = new THREE.Mesh(
-      ringGeo,
-      new THREE.MeshBasicMaterial({
-        color: 0x4fd1ff,
-        transparent: true,
-        opacity: 0.5,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-      }),
-    )
-    group.add(ring)
-    group.userData = { id: cam.id, dot, ring }
-    pointMeshes.set(cam.id, group)
-    scene.add(group)
+      const ring = new THREE.Mesh(
+        ringGeo,
+        new THREE.MeshBasicMaterial({
+          color: 0x4fd1ff,
+          transparent: true,
+          opacity: 0.5,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        }),
+      )
+      group.add(ring)
+      group.userData = { id: cam.id, dot, ring }
+      pointMeshes.set(cam.id, group)
+      scene.add(group)
+    }
   }
 
   // ───────────────────────── 相机控制 ─────────────────────────
