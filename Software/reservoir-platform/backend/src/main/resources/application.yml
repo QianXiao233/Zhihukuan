@@ -78,6 +78,22 @@ reservoir:
     cooldown-minutes: ${ALERT_COOLDOWN_MINUTES:10}
     # 登录异常告警按账号维度的冷却时间（分钟）
     login-cooldown-minutes: ${LOGIN_ALERT_COOLDOWN_MINUTES:5}
+  # 服务间消息中转总线：消息存 MongoDB，客户端/权限存 MySQL
+  bus:
+    # 领取后的租约（秒）：超时没 ack 会被重新投递
+    lease-seconds: ${BUS_LEASE_SECONDS:120}
+    # 最多领取次数，超过进死信
+    max-attempts: ${BUS_MAX_ATTEMPTS:5}
+    # 默认消息保留期（秒），7 天
+    default-ttl-seconds: ${BUS_DEFAULT_TTL_SECONDS:604800}
+    # 允许的最大保留期（秒），30 天
+    max-ttl-seconds: ${BUS_MAX_TTL_SECONDS:2592000}
+    # 单条消息负载上限（字节）
+    max-payload-bytes: ${BUS_MAX_PAYLOAD_BYTES:65536}
+    # 长轮询最多挂起（秒）
+    max-wait-seconds: ${BUS_MAX_WAIT_SECONDS:25}
+    # 死信/过期租约回收任务间隔（秒）
+    reaper-interval-seconds: ${BUS_REAPER_INTERVAL_SECONDS:30}
   # 平台后端：登录鉴权 / 坝体设备台账 / MQTT 水情采集
   platform:
     # 置 false 可整体关闭 MQTT 订阅与数据库写入（纯问答演示）

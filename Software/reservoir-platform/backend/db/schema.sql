@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS `user` (
   `UserName` VARCHAR(255) NOT NULL,
   `PassWord` VARCHAR(255) NOT NULL,
   `Level`    INT          NOT NULL,
+  `Remark`   VARCHAR(500) DEFAULT NULL,
   PRIMARY KEY (`ID`),
   UNIQUE KEY `uk_username` (`UserName`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -116,8 +117,22 @@ CREATE TABLE IF NOT EXISTS `message` (
   `content`     VARCHAR(1000) NOT NULL,
   `is_read`     TINYINT      NOT NULL DEFAULT 0,
   `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `popup`       TINYINT      NOT NULL DEFAULT 0,
+  `sound`       TINYINT      NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
   KEY `idx_message_read_time` (`is_read`, `create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── 每个用户各自的通知状态（已读/弹窗确认都按人隔离） ──
+CREATE TABLE IF NOT EXISTS `message_recipient` (
+  `message_id`  VARCHAR(64)  NOT NULL,
+  `username`    VARCHAR(255) NOT NULL,
+  `is_read`     TINYINT      NOT NULL DEFAULT 0,
+  `popup_done`  TINYINT      NOT NULL DEFAULT 1,
+  `read_time`   DATETIME     DEFAULT NULL,
+  `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`message_id`, `username`),
+  KEY `idx_recipient_user` (`username`, `is_read`, `message_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ── 默认监测参数（可重复执行，仅在不存在时初始化） ─────
@@ -143,6 +158,19 @@ CREATE TABLE IF NOT EXISTS platform_audit (
   success TINYINT NOT NULL DEFAULT 1,
   create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY idx_audit_time (create_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── 消息总线客户端（MySQL；消息本体在 MongoDB bus_messages） ──
+CREATE TABLE IF NOT EXISTS `bus_client` (
+  `client_id`       VARCHAR(64)   NOT NULL,
+  `client_name`     VARCHAR(100)  NOT NULL,
+  `secret_hash`     CHAR(64)      NOT NULL,
+  `allow_publish`   VARCHAR(1000) NOT NULL DEFAULT '#',
+  `allow_subscribe` VARCHAR(1000) NOT NULL DEFAULT '#',
+  `enabled`         TINYINT       NOT NULL DEFAULT 1,
+  `created_at`      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`client_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ── 阈值告警记录（MySQL；MongoDB 只存水情读数） ─────────
@@ -174,9 +202,10 @@ CREATE TABLE IF NOT EXISTS `platform_setting` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 默认值只在不存在时写入，重复执行不会覆盖运维已改过的配置。
--- 安全提示：下面这条 token 是从旧代码里迁移过来的，建议首次登录后在管理页更换。
+-- 推送 token 不写入版本库：首次部署后到「系统设置 → 推送与告警」填写，
+-- 或用 PUSH_TOKEN 环境变量提供；这里只预置空值。
 INSERT INTO `platform_setting` (`setting_key`, `setting_value`)
-SELECT 'push.token', '9fa3448690ad0f7a1da7cf509719073f92c761fe516fa1a8ac2a446f0473e642'
+SELECT 'push.token', ''
 WHERE NOT EXISTS (SELECT 1 FROM `platform_setting` WHERE `setting_key` = 'push.token');
 INSERT INTO `platform_setting` (`setting_key`, `setting_value`)
 SELECT 'push.enabled', 'true'

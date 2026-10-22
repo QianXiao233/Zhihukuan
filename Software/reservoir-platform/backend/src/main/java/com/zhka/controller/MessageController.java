@@ -1,7 +1,9 @@
 package com.zhka.controller;
 
 import com.zhka.entity.Message;
+import com.zhka.entity.User;
 import com.zhka.service.MessageService;
+import com.zhka.service.UserService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -23,16 +25,21 @@ import java.util.UUID;
 public class MessageController {
 
     private final MessageService messageService;
+    private final UserService userService;
 
-    public MessageController(MessageService messageService) {
+    public MessageController(MessageService messageService, UserService userService) {
         this.messageService = messageService;
+        this.userService = userService;
     }
 
     @PostMapping("/add_message")
     public Map<String, Object> addMessage(@RequestParam("level") int level,
                                           @RequestParam("type") String type,
                                           @RequestParam("content") String content) {
-        Message message = messageService.add(new Message(UUID.randomUUID().toString(), level, type, content));
+        Message message = new Message(UUID.randomUUID().toString(), level, type, content);
+        // 外部采集端没有“接收人”概念，默认发给当前全部用户，保证平台里能看到
+        var recipients = userService.findAll().stream().map(User::getUsername).toList();
+        messageService.publish(message, recipients);
         return Map.of("messageid", message.getId());
     }
 

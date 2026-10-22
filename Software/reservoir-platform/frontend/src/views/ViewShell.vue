@@ -32,7 +32,7 @@
       <nav class="platform-nav" aria-label="平台功能导航">
         <template v-for="group in NAV_GROUPS" :key="group.label">
           <p class="platform-nav__label">{{ group.label }}</p>
-          <button v-for="item in group.items.filter(item => item.name !== 'users' || isAdmin)" :key="item.name" type="button" class="platform-nav__item" :class="{ 'is-active': isActive(item) }" @click="navigate(item.name)">
+          <button v-for="item in group.items.filter(item => !['users', 'service-bus'].includes(item.name) || isAdmin)" :key="item.name" type="button" class="platform-nav__item" :class="{ 'is-active': isActive(item) }" @click="navigate(item.name)">
             <component :is="item.icon" class="platform-nav__icon" />
             <span>{{ item.title }}</span>
             <i v-if="item.name === 'notifications' && unreadCount" class="platform-nav__badge">{{ unreadCount > 99 ? '99+' : unreadCount }}</i>
@@ -84,6 +84,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
+  ApiOutlined,
   AppstoreOutlined,
   BankOutlined,
   BellOutlined,
@@ -155,6 +156,7 @@ onMounted(() => {
   updateClock()
   updateUiPreferences()
   window.addEventListener('platform-preferences', updateUiPreferences)
+  window.addEventListener('platform-notice', refreshUnread)
   clockTimer = window.setInterval(updateClock, 1000)
   void refreshUnread()
   void refreshRuntime()
@@ -162,7 +164,7 @@ onMounted(() => {
   document.addEventListener('click', closeDamMenuOnOutside)
   void validateToken(localStorage.getItem('token')).then(identity => { if(identity.success){ localStorage.setItem('level', String(identity.level)); isAdmin.value = identity.level === 0 || identity.level >= 3 } }).catch(() => {})
 })
-onBeforeUnmount(() => { window.removeEventListener('platform-preferences', updateUiPreferences); document.removeEventListener('click', closeDamMenuOnOutside); clearInterval(clockTimer); clearInterval(notificationTimer) })
+onBeforeUnmount(() => { window.removeEventListener('platform-preferences', updateUiPreferences); window.removeEventListener('platform-notice', refreshUnread); document.removeEventListener('click', closeDamMenuOnOutside); clearInterval(clockTimer); clearInterval(notificationTimer) })
 
 const NAV_GROUPS = [
   {
@@ -184,6 +186,7 @@ const NAV_GROUPS = [
       { name: 'parameters', title: '监测参数设置', icon: SlidersOutlined },
       { name: 'users', title: '用户与权限', icon: TeamOutlined },
       { name: 'data-maintenance', title: '数据维护', icon: DatabaseOutlined },
+      { name: 'service-bus', title: '服务接入', icon: ApiOutlined },
       { name: 'operations', title: '运行与审计', icon: SafetyCertificateOutlined },
     ],
   },

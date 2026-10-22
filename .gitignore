@@ -44,6 +44,8 @@ $RECYCLE.BIN/
 .dsh-project-memory/
 _dsh-acl-recovery/
 .dsh/
+# archify 生成的架构图预览，属于本机输出
+.archify/
 
 # ---------- 日志与临时文件 ----------
 *.log

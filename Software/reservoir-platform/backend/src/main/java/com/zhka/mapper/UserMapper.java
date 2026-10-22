@@ -24,11 +24,11 @@ public interface UserMapper {
     @Select("SELECT * FROM user WHERE id = #{id}")
     User findById(Integer id);
 
-    @Insert("INSERT INTO user(username, password, level) VALUES(#{username}, #{password}, #{level})")
+    @Insert("INSERT INTO user(username, password, level, remark) VALUES(#{username}, #{password}, #{level}, #{remark})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(User user);
 
-    @Update("UPDATE user SET username=#{username}, password=#{password}, level=#{level} WHERE id=#{id}")
+    @Update("UPDATE user SET username=#{username}, password=#{password}, level=#{level}, remark=#{remark} WHERE id=#{id}")
     int update(User user);
 
     @Delete("DELETE FROM user WHERE id = #{id}")

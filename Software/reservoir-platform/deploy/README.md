@@ -393,3 +393,137 @@ MQTT_SAVE_INTERVAL_SECONDS=10
 
 
 启动日志里也能看到导入的配置源，确认 `.env` 的绝对路径符合预期。
+
+## 11. 服务间消息中转（A → 后端 → B）
+
+用于「服务 A 发现异常 → 后端中转 → 服务 B 处置」这类场景。消息本体存 MongoDB
+`bus_messages`，服务身份与主题权限存 MySQL `bus_client`。
+
+### 11.1 初始化
+
+```sql
+-- MySQL：只加一张客户端表，重复执行安全
+SOURCE backend/db/management-upgrade.sql;
+```
+
+MongoDB 不需要手工建集合：首次发布时会自动建 `bus_messages` 和索引
+（`expiresAt` TTL、`msgId` 唯一、状态复合索引）。
+
+### 11.2 创建服务身份
+
+管理员登录后，在「管理中心 → 服务接入」页面创建，也可以直接调用接口
+（`client_id` 2~64 位字母/数字/下划线/短横线）：
+
+```bash
+TOKEN=<管理员 JWT>
+curl -s -X POST http://127.0.0.1:8085/api/manage/bus/clients \
+  -H "Authorization: Bearer $TOKEN" \
+  -d 'client_id=svc-a&client_name=告警服务&allow_publish=alarm.#&allow_subscribe=none'
+# {"success":true,"data":{"client":{...},"secret":"xxxx"}}
+```
+
+**secret 只返回一次**，请立即保存。格式是 `clientId.secret`，调用时放在
+`Authorization: Bearer svc-a.xxxx`。
+
+- `allow_publish` / `allow_subscribe`：逗号分隔的主题模式，`*` 匹配一层、`#` 匹配任意层；
+  默认 `#`。不想让某方向发消息就填一个匹配不到的模式，如 `none`。
+- 轮换密钥：`POST /api/manage/bus/clients/rotate`（旧密钥立即失效）
+- 停用/启用：`POST /api/manage/bus/clients/enable`（`enabled=false/true`）
+- 删除：`POST /api/manage/bus/clients/delete`
+- 列表：`GET /api/manage/bus/clients`
+
+### 11.3 发布与消费
+
+```bash
+# A 发布（target 可省略；省略表示广播）
+curl -s -X POST http://127.0.0.1:8085/api/bus/publish \
+  -H "Authorization: Bearer svc-a.SECRET" \
+  -H 'Content-Type: application/json' \
+  -d '{"topic":"alarm.dam1.level","type":"level_exceeded","target":"svc-b",
+       "payload":{"level":1.83,"threshold":1.2,"unit":"m"},"correlationId":"evt-001"}'
+
+# B 长轮询领取：没有消息时最多挂 25 秒，有消息立刻返回
+curl -s "http://127.0.0.1:8085/api/bus/pull?topic=alarm.%23&limit=20&wait=25" \
+  -H "Authorization: Bearer svc-b.SECRET"
+
+# B 确认消费（不 ack 会在租约到期后重投）
+curl -s -X POST http://127.0.0.1:8085/api/bus/ack \
+  -H "Authorization: Bearer svc-b.SECRET" \
+  -H 'Content-Type: application/json' \
+  -d '{"msgIds":["<msgId>"]}'
+
+# B 处理失败：退避后重投，次数用尽进死信
+curl -s -X POST http://127.0.0.1:8085/api/bus/nack \
+  -H "Authorization: Bearer svc-b.SECRET" \
+  -H 'Content-Type: application/json' \
+  -d '{"msgId":"<msgId>","error":"下游超时"}'
+```
+
+其他接口：
+
+| 接口 | 用途 |
+| --- | --- |
+| `GET /api/bus/me` | 自检密钥与权限 |
+| `GET /api/bus/status` | 队列计数（pending/processing/delivered/dead） |
+| `GET /api/manage/bus/status` | 管理端：队列计数 + 客户端列表 |
+
+### 11.4 投递语义
+
+- **至少一次**：租约内没 ack 会重投，消费方必须按 `msgId` 幂等；
+- 租约默认 120 秒，领取次数超过 5 次进 `dead`，不再自动投递；
+- 退避：5s、10s、20s、40s… 最多 5 分钟；
+- `nack` 后立即拉取拿不到（退避中），到点后自动可领；
+- 消息默认保留 7 天，`ttlSeconds` 可指定（60 秒 ~ 30 天），到期由 MongoDB TTL 删除；
+- `target` 指定消费方；为空表示广播，任何有订阅权限的客户端都能领。
+
+### 11.5 主题与性能
+
+- 主题只能由字母、数字、下划线、短横线和点组成，如 `alarm.dam1.level`；
+- 订阅可用 `alarm.*`（一层）或 `alarm.#`（任意层），发布时必须写具体主题；
+- **多频道**：客户端权限和 `pull` 的主题都支持逗号分隔，例如
+  `allow_publish=alarm.#,device.#`、`GET /api/bus/pull?topic=alarm.%23,device.%23`，
+  一次拉取可以同时消费多个频道，返回的每条消息带 `topic`，按主题路由即可；
+- 单机长轮询端到端约 **10–50ms**（同区域公网），长轮询唤醒是即时的，
+  等待循环每 2 秒回查数据库只是多实例部署时的兜底；
+- 单条 payload 上限 64KB，大文件请传对象存储后只发地址；
+- 参数可用环境变量调整：`BUS_LEASE_SECONDS`、`BUS_MAX_ATTEMPTS`、
+  `BUS_DEFAULT_TTL_SECONDS`、`BUS_MAX_WAIT_SECONDS`、`BUS_MAX_PAYLOAD_BYTES`。
+
+> 注意：MongoDB 目前是单机部署，**不能用 change stream**；消息推送靠应用层的
+> 长轮询唤醒，不依赖副本集。将来如果要多实例，本方案也能工作（最多多 2 秒延迟），
+> 要更低延迟再引入 Redis/EMQX 做跨实例广播。
+
+### 11.6 前端通知频道（ui.#）
+
+浏览器登录后会自动订阅 `ui.#`，走 SSE，不需要轮询：
+
+1. `POST /api/bus/ticket`（带登录 JWT）换一次性票据，60 秒有效；
+2. `GET /api/bus/subscribe?ticket=...&topic=ui.%23` 建立长连接，服务端每 20 秒心跳；
+3. 票据只能用一次，断线重连会重新申请，JWT 不会出现在 URL/访问日志里。
+
+**发布通知时可以选择接收范围**：全部用户，或指定一位/多位用户。
+每个人在 `message_recipient` 里有独立的已读和弹窗确认状态，一个人点“我知道了”
+不会影响其他用户；离线用户登录后会自动补弹未确认的通知。
+
+- `popup: true` → 前端弹模态框 + 提示音，必须点“我知道了”才能关闭（遮罩和 Esc 都关不掉）；
+- `popup: false` → 右上角轻提示，6 秒自动消失，不打断操作；
+- 弹窗里的“查看通知”会跳到消息通知页；
+- 管理员可以“撤回”通知，删除所有用户的这条记录；“删除”只移除当前用户自己的记录。
+- 用户表新增 `Remark` 备注字段，发布通知的“指定用户”列表里会显示备注，便于辨认岗位。
+
+其他服务也可以主动推前端通知，只要客户端有 `ui.#` 发布权限：
+
+```bash
+curl -X POST https://zhka.demo.ai.qianxiao.xin/api/bus/publish \
+  -H "Authorization: Bearer svc-a.<secret>" \
+  -H 'Content-Type: application/json' \
+  -d '{"topic":"ui.notice","payload":{
+        "title":"水位异常","content":"坝前水位 1.83m，超过阈值 1.2m",
+        "level":2,"popup":true,"sound":true}}'
+```
+
+payload 字段：`title`、`content`、`level`（1 提示 / 2 警告 / 3 严重）、`popup`、`sound`、
+`messageId`、`time`。通知类消息 TTL 为 1 小时（数据库里的 `message` 记录不受影响）。
+
+> 浏览器订阅只允许 `ui.*`，服务间的 `alarm.*`、`device.*` 等主题不会被推到页面；
+> SSE 是广播，同一条通知每个页面都会收到，不会被其他消费者“领走”。

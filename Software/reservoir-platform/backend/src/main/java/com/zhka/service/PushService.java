@@ -27,7 +27,7 @@ import java.util.function.Consumer;
  * <p>请求地址由「配置里的基础地址 + 调用时传入的 token」拼成：
  * <pre>
  *   {baseUrl}/{token}
- *   例：https://push.showdoc.com.cn/server/api/push/9fa34486...
+ *   例：https://push.showdoc.com.cn/server/api/push/&lt;token&gt;
  * </pre>
  * 接口接受 {@code GET} 或 {@code POST}（这里统一用 POST 表单，避免内容过长被 URL 长度限制），
  * 参数为 {@code title}（标题）与 {@code content}（内容，支持文本 / markdown / html）。

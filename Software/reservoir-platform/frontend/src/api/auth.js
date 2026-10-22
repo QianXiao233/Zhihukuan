@@ -38,4 +38,5 @@ export function clearAuth() {
   localStorage.removeItem('token')
   localStorage.removeItem('username')
   localStorage.removeItem('level')
+  window.dispatchEvent(new Event('platform-logout'))
 }

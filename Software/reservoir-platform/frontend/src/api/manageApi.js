@@ -108,6 +108,15 @@ export const monitorStatus = () => request('/api/manage/monitor/status')
 export const listAudit = (page = 1, query = '') => request(`/api/manage/audit/list?${new URLSearchParams({ page, query })}`)
 export const getRuntime = () => request('/api/manage/runtime')
 
+// ─────────── 服务间消息总线（消息存 MongoDB） ───────────
+
+/** 队列计数 + 客户端列表，一次请求拿全 */
+export const listBusStatus = () => request('/api/manage/bus/status')
+export const createBusClient = (values) => request('/api/manage/bus/clients', { method: 'POST', body: formBody(values) })
+export const setBusClientEnabled = (clientId, enabled) => request('/api/manage/bus/clients/enable', { method: 'POST', body: formBody({ clientId, enabled }) })
+export const rotateBusClient = (clientId) => request('/api/manage/bus/clients/rotate', { method: 'POST', body: formBody({ clientId }) })
+export const deleteBusClient = (clientId) => request('/api/manage/bus/clients/delete', { method: 'POST', body: formBody({ clientId }) })
+
 export async function listMessages() {
   const body = await request('/api/manage/messages/list')
   return body.data || []
@@ -122,3 +131,6 @@ export const addMessage = (values) => request('/api/manage/messages/add', { meth
 export const markMessageRead = (id) => request('/api/manage/messages/read', { method: 'POST', body: formBody({ id }, false) })
 export const markAllMessagesRead = () => request('/api/manage/messages/read-all', { method: 'POST' })
 export const deleteMessage = (id) => request('/api/manage/messages/delete', { method: 'POST', body: formBody({ id }, false) })
+export const recallMessage = (id) => request('/api/manage/messages/recall', { method: 'POST', body: formBody({ id }, false) })
+export const pendingPopups = () => request('/api/manage/messages/pending-popups')
+export const markPopupDone = (id) => request('/api/manage/messages/popup-done', { method: 'POST', body: formBody({ id }, false) })

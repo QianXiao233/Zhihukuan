@@ -30,6 +30,7 @@
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { login } from '../api/auth.js'
+import { startNoticeChannel } from '../utils/noticeChannel.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -66,6 +67,7 @@ async function handleLogin() {
     localStorage.setItem('token', result.token || '')
     localStorage.setItem('username', result.username || form.value.username)
     if (result.level !== undefined) localStorage.setItem('level', String(result.level))
+    startNoticeChannel()
     if (!remember.value) sessionStorage.setItem('reservoir-session', '1')
     const redirect = typeof route.query.redirect === 'string' && route.query.redirect !== '/' ? route.query.redirect : '/monitor'
     await router.replace(redirect)

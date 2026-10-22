@@ -16,6 +16,8 @@ public class User {
     private String password;
     /** 权限等级，越大权限越高（沿用原平台约定） */
     private Integer level;
+    /** 备注：岗位、所属单位等，便于通知按人发送时辨认 */
+    private String remark;
 
     public Integer getId() {
         return id;
@@ -47,5 +49,13 @@ public class User {
 
     public void setLevel(Integer level) {
         this.level = level;
+    }
+
+    public String getRemark() {
+        return remark;
+    }
+
+    public void setRemark(String remark) {
+        this.remark = remark;
     }
 }

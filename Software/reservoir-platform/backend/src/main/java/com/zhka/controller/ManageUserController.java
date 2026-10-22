@@ -42,7 +42,8 @@ public class ManageUserController extends AbstractManageController {
             @RequestHeader(value = "Authorization", required = false) String authorization,
             @RequestParam("username") String username,
             @RequestParam("password") String password,
-            @RequestParam("level") Integer level) {
+            @RequestParam("level") Integer level,
+            @RequestParam(value = "remark", required = false, defaultValue = "") String remark) {
         AuthUser user = currentUser(authorization);
         if (user == null) {
             return tokenInvalid();
@@ -51,7 +52,8 @@ public class ManageUserController extends AbstractManageController {
             return fail(user, "仅系统管理员可管理账号");
         }
         if (username.isBlank() || password.length() < 6 || level < 1 || level > 3) return fail(user, "请输入账号、至少六位的密码和有效权限等级");
-        if (!userService.create(username, password, level)) {
+        if (remark.length() > 500) return fail(user, "备注最多 500 个字符");
+        if (!userService.create(username, password, level, remark)) {
             return fail(user, "用户名已存在");
         }
         return ok(user, "新增成功");
@@ -63,7 +65,8 @@ public class ManageUserController extends AbstractManageController {
             @RequestParam("id") Integer id,
             @RequestParam("username") String username,
             @RequestParam(value = "password", defaultValue = "") String password,
-            @RequestParam("level") Integer level) {
+            @RequestParam("level") Integer level,
+            @RequestParam(value = "remark", required = false, defaultValue = "") String remark) {
         AuthUser user = currentUser(authorization);
         if (user == null) {
             return tokenInvalid();
@@ -77,7 +80,8 @@ public class ManageUserController extends AbstractManageController {
             return fail(user, "不能修改当前账号的用户名或权限，请使用另一管理员账号操作");
         if (username.isBlank() || level < 0 || level > 3 || (!password.isBlank() && password.length() < 6))
             return fail(user, "账号、密码或权限等级不符合要求");
-        if (!userService.update(id, username, password, level)) {
+        if (remark.length() > 500) return fail(user, "备注最多 500 个字符");
+        if (!userService.update(id, username, password, level, remark)) {
             return fail(user, "用户不存在或用户名已被使用");
         }
         return ok(user, "更新成功");

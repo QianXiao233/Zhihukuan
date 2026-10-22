@@ -35,7 +35,7 @@ public class UserService {
      *
      * @return 用户名已存在时返回 false
      */
-    public boolean create(String username, String password, Integer level) {
+    public boolean create(String username, String password, Integer level, String remark) {
         if (exists(username)) {
             return false;
         }
@@ -43,8 +43,14 @@ public class UserService {
         user.setUsername(username);
         user.setPassword(password);
         user.setLevel(level);
+        user.setRemark(remark);
         userMapper.insert(user);
         return true;
+    }
+
+    /** 兼容旧调用（不带备注） */
+    public boolean create(String username, String password, Integer level) {
+        return create(username, password, level, null);
     }
 
     /**
@@ -52,7 +58,7 @@ public class UserService {
      *
      * @return 用户不存在时返回 false
      */
-    public boolean update(Integer id, String username, String password, Integer level) {
+    public boolean update(Integer id, String username, String password, Integer level, String remark) {
         User user = userMapper.findById(id);
         if (user == null) {
             return false;
@@ -66,8 +72,15 @@ public class UserService {
             user.setPassword(password);
         }
         user.setLevel(level);
+        user.setRemark(remark);
         userMapper.update(user);
         return true;
+    }
+
+    /** 兼容旧调用（不改备注） */
+    public boolean update(Integer id, String username, String password, Integer level) {
+        User user = userMapper.findById(id);
+        return update(id, username, password, level, user == null ? null : user.getRemark());
     }
 
     /** 删除用户；不存在时同样视为成功（与原接口一致） */

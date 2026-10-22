@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
 
 /**
@@ -40,6 +41,15 @@ public class GlobalExceptionHandler {
                 ? "总库容数值超出数据库范围，请检查单位或数值"
                 : "提交的数据不符合数据库约束，请检查后重试";
         return ResponseEntity.badRequest().body(ApiResponse.error(HttpStatus.BAD_REQUEST.value(), message));
+    }
+
+    @ExceptionHandler(DataAccessResourceFailureException.class)
+    public ResponseEntity<ApiResponse<Void>> handleResourceFailure(DataAccessResourceFailureException e) {
+        // MongoDB / MySQL 连不上时给调用方一个可识别的 503，而不是笼统的 500
+        log.error("数据库连接失败: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ApiResponse.error(HttpStatus.SERVICE_UNAVAILABLE.value(),
+                        "数据库暂时不可用，请稍后重试"));
     }
 
     @ExceptionHandler(Exception.class)

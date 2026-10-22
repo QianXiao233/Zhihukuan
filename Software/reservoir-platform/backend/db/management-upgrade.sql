@@ -11,6 +11,19 @@ CREATE TABLE IF NOT EXISTS platform_audit (
   KEY idx_audit_time (create_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- ── 消息总线客户端（MySQL；消息本体在 MongoDB bus_messages） ──
+CREATE TABLE IF NOT EXISTS `bus_client` (
+  `client_id`       VARCHAR(64)   NOT NULL,
+  `client_name`     VARCHAR(100)  NOT NULL,
+  `secret_hash`     CHAR(64)      NOT NULL,
+  `allow_publish`   VARCHAR(1000) NOT NULL DEFAULT '#',
+  `allow_subscribe` VARCHAR(1000) NOT NULL DEFAULT '#',
+  `enabled`         TINYINT       NOT NULL DEFAULT 1,
+  `created_at`      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`client_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- ── 阈值告警记录（MySQL；MongoDB 只存水情读数） ─────────
 CREATE TABLE IF NOT EXISTS `alert_event` (
   `id`             BIGINT       NOT NULL AUTO_INCREMENT,
@@ -40,9 +53,9 @@ CREATE TABLE IF NOT EXISTS `platform_setting` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 默认值只在不存在时写入，重复执行不会覆盖运维已改过的配置。
--- 安全提示：下面这条 token 是从旧代码里迁移过来的，建议首次登录后在管理页更换。
+-- 推送 token 不写入版本库：首次部署后到「系统设置 → 推送与告警」填写。
 INSERT INTO `platform_setting` (`setting_key`, `setting_value`)
-SELECT 'push.token', '9fa3448690ad0f7a1da7cf509719073f92c761fe516fa1a8ac2a446f0473e642'
+SELECT 'push.token', ''
 WHERE NOT EXISTS (SELECT 1 FROM `platform_setting` WHERE `setting_key` = 'push.token');
 INSERT INTO `platform_setting` (`setting_key`, `setting_value`)
 SELECT 'push.enabled', 'true'
@@ -50,3 +63,38 @@ WHERE NOT EXISTS (SELECT 1 FROM `platform_setting` WHERE `setting_key` = 'push.e
 INSERT INTO `platform_setting` (`setting_key`, `setting_value`)
 SELECT 'push.cooldown_minutes', '10'
 WHERE NOT EXISTS (SELECT 1 FROM `platform_setting` WHERE `setting_key` = 'push.cooldown_minutes');
+
+-- ── 用户备注（可重复执行） ───────────────────────────────
+SET @ddl = IF(NOT EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_schema = DATABASE() AND table_name = 'user' AND column_name = 'Remark'),
+  'ALTER TABLE `user` ADD COLUMN `Remark` VARCHAR(500) DEFAULT NULL', 'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- ── 通知的弹窗/提示音标记（可重复执行） ─────────────────
+SET @ddl = IF(NOT EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_schema = DATABASE() AND table_name = 'message' AND column_name = 'popup'),
+  'ALTER TABLE `message` ADD COLUMN `popup` TINYINT NOT NULL DEFAULT 0', 'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @ddl = IF(NOT EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_schema = DATABASE() AND table_name = 'message' AND column_name = 'sound'),
+  'ALTER TABLE `message` ADD COLUMN `sound` TINYINT NOT NULL DEFAULT 0', 'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- ── 通知接收人：已读/弹窗确认按用户隔离 ─────────────────
+CREATE TABLE IF NOT EXISTS `message_recipient` (
+  `message_id`  VARCHAR(64)  NOT NULL,
+  `username`    VARCHAR(255) NOT NULL,
+  `is_read`     TINYINT      NOT NULL DEFAULT 0,
+  `popup_done`  TINYINT      NOT NULL DEFAULT 1,
+  `read_time`   DATETIME     DEFAULT NULL,
+  `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`message_id`, `username`),
+  KEY `idx_recipient_user` (`username`, `is_read`, `message_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 老通知补接收记录，保证升级后每个人都能看到历史消息；
+-- popup_done=1 避免登录时把历史通知全部弹一遍。
+INSERT IGNORE INTO `message_recipient` (`message_id`, `username`, `is_read`, `popup_done`, `read_time`)
+SELECT m.id, u.UserName, m.is_read, 1, IF(m.is_read = 1, m.create_time, NULL)
+FROM `message` m CROSS JOIN `user` u;

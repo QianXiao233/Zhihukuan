@@ -17,9 +17,13 @@ public class ManagementConfig implements WebMvcConfigurer {
     public ManagementConfig(AuthService auth) { this.auth = auth; }
     public static int requiredLevel(String path, String method) {
         if (path.equals("/api/manage/user/password")) return 1;
-        if (path.equals("/api/manage/messages/read") || path.equals("/api/manage/messages/read-all")) return 1;
+        // 通知的已读、全部已读、弹窗确认都是每位登录用户自己的操作
+        if (path.equals("/api/manage/messages/read") || path.equals("/api/manage/messages/read-all")
+                || path.equals("/api/manage/messages/popup-done")) return 1;
         // 推送 token / 冷却时间：查看给运维（2），修改只给管理员（3）
         if (path.startsWith("/api/manage/push")) return "GET".equals(method) ? 2 : 3;
+        // 消息总线的客户端与密钥只给管理员
+        if (path.startsWith("/api/manage/bus")) return 3;
         if (path.startsWith("/api/manage/user") || path.startsWith("/api/manage/audit")) return 3;
         if ("GET".equals(method)) return 1;
         if (path.startsWith("/api/manage/device") || path.startsWith("/api/manage/param")) return 2;

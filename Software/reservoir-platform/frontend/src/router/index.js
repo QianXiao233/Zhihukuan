@@ -104,6 +104,12 @@ export const routes = [
     meta: { title: '数据维护', icon: 'data-maintenance', requiresAuth: true },
   },
   {
+    path: '/service-bus',
+    name: 'service-bus',
+    component: () => import('../views/ServiceBusView.vue'),
+    meta: { title: '服务接入', icon: 'api', requiresAuth: true },
+  },
+  {
     path: '/settings',
     name: 'settings',
     component: () => import('../views/SystemSettingsView.vue'),

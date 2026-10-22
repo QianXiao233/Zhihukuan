@@ -4,10 +4,29 @@
       <component :is="Component" />
     </transition>
   </router-view>
+  <NoticePopup />
 </template>
 
 <script setup>
-// 应用根组件：仅承载路由出口与页面切换过渡
+import { onBeforeUnmount, onMounted } from 'vue'
+import NoticePopup from './components/NoticePopup.vue'
+import { startNoticeChannel, stopNoticeChannel } from './utils/noticeChannel.js'
+
+// 登录后订阅平台通知频道；多标签页登录/退出时同步连接状态
+function handleStorage(event) {
+  if (event.key !== 'token') return
+  if (event.newValue) startNoticeChannel()
+  else stopNoticeChannel()
+}
+
+onMounted(() => {
+  startNoticeChannel()
+  window.addEventListener('storage', handleStorage)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('storage', handleStorage)
+})
 </script>
 
 <style>
