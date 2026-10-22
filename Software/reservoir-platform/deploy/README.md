@@ -229,6 +229,9 @@ AI 回答按 GFM Markdown 渲染：标题、列表、表格、代码块、引用
 由于回答来自模型与知识库，HTML 会先经 DOMPurify 白名单消毒，链接统一新窗口打开；
 用户自己输入的内容始终按纯文本展示，不参与 Markdown 渲染。
 
+完整的 Dify 系统提示词（Markdown 输出要求 + 页面跳转标记）见
+[`deploy/dify-prompt.md`](dify-prompt.md)。
+
 排查用只读接口（需要登录 JWT，返回与 AI 看到的一致的数据）：
 
 ```bash

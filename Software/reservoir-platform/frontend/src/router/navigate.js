@@ -24,6 +24,14 @@ const ALIASES = {
   泄洪: 'flood',
   生态: 'ecology',
   放流: 'ecology',
+  // 知识库提示词里的语义目标：救援落到防汛调度，数字孪生落到运营总览
+  rescue: 'flood',
+  twin: 'monitor',
+  救援: 'flood',
+  溺水: 'flood',
+  应急: 'flood',
+  数字孪生: 'monitor',
+  孪生: 'monitor',
 }
 
 /**

@@ -149,6 +149,19 @@ class NavigateServiceTest {
     }
 
     @Test
+    @DisplayName("救援/数字孪生等新意图映射到现有页面")
+    void newIntentAliases() {
+        assertEquals("flood", service.normalize("rescue"));
+        assertEquals("flood", service.normalize("溺水救援"));
+        assertEquals("monitor", service.normalize("twin"));
+        assertEquals("monitor", service.normalize("数字孪生"));
+
+        NavigateService.Parsed parsed = service.parse("救援保障方案如下。 [[jump:rescue]]");
+        assertEquals("flood", parsed.command().target());
+        assertEquals("救援保障方案如下。", parsed.text());
+    }
+
+    @Test
     @DisplayName("流式累积文本可提前探测到指令")
     void detectIncremental() {
         String partial = "稍等\n```navigate\n{\"target\":\"policy\"}\n```";

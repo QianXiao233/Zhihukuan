@@ -54,14 +54,16 @@ public class NavigateService {
     private static final Pattern OPEN_THINK =
             Pattern.compile("<think\\b[^>]*>[\\s\\S]*$", Pattern.CASE_INSENSITIVE);
 
-    /** 合法页面标识 */
+    /** 合法页面标识；rescue/twin 是知识库提示词里的语义目标，落到现有页面 */
     private static final Map<String, String> TARGETS = Map.of(
             "home", "home",
             "monitor", "monitor",
             "inspection", "inspection",
             "policy", "policy",
             "flood", "flood",
-            "ecology", "ecology");
+            "ecology", "ecology",
+            "rescue", "flood",
+            "twin", "monitor");
 
     /** 中文别名 → 页面标识 */
     private static final Map<String, String> ALIASES = new LinkedHashMap<>();
@@ -83,6 +85,11 @@ public class NavigateService {
         ALIASES.put("泄洪", "flood");
         ALIASES.put("生态", "ecology");
         ALIASES.put("放流", "ecology");
+        ALIASES.put("救援", "flood");
+        ALIASES.put("溺水", "flood");
+        ALIASES.put("应急", "flood");
+        ALIASES.put("数字孪生", "monitor");
+        ALIASES.put("孪生", "monitor");
     }
 
     /** 解析结果：清洗后的正文 + 跳转指令 */
