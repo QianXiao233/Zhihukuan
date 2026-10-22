@@ -1,7 +1,7 @@
 // 从 AI 回答正文中抽取需要红色高亮的安全警示语句
 
 /** 命中即视为安全警示的关键词 */
-const DANGER_KEYWORDS = [
+export const DANGER_KEYWORDS = [
   '严禁',
   '禁止',
   '不得',

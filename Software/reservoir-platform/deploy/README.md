@@ -225,6 +225,10 @@ curl -i -F "file=@./test.png" https://zhka.demo.ai.qianxiao.xin/api/files/upload
 AI 判定需要跳转页面时，只在回答下方展示“前往「某页面」”的入口按钮，
 **不会自动切换页面**；用户点击后才跳转，避免还没看完回答就被带走。
 
+AI 回答按 GFM Markdown 渲染：标题、列表、表格、代码块、引用和链接都能正常显示。
+由于回答来自模型与知识库，HTML 会先经 DOMPurify 白名单消毒，链接统一新窗口打开；
+用户自己输入的内容始终按纯文本展示，不参与 Markdown 渲染。
+
 排查用只读接口（需要登录 JWT，返回与 AI 看到的一致的数据）：
 
 ```bash

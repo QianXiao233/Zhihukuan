@@ -91,6 +91,7 @@
   border-top-left-radius: 4px;
   color: #123f66;
   box-shadow: 0 4px 16px rgba(2, 22, 39, 0.1);
+  white-space: normal; /* Markdown 的换行由 <p>/<br> 控制，避免 pre-wrap 放大空行 */
 }
 
 /* 用户：政务蓝渐变底 + 白字 */
@@ -102,18 +103,160 @@
   box-shadow: 0 6px 18px rgba(15, 58, 114, 0.28);
 }
 
-/* 安全警示：红色高亮 */
-.message-bubble__danger {
-  color: var(--danger-color);
-  background: var(--danger-bg);
+/* ─────────── AI 回答的 Markdown 排版 ─────────── */
+
+.message-bubble__markdown :deep(p),
+.message-bubble__markdown :deep(ul),
+.message-bubble__markdown :deep(ol),
+.message-bubble__markdown :deep(blockquote),
+.message-bubble__markdown :deep(pre),
+.message-bubble__markdown :deep(table),
+.message-bubble__markdown :deep(hr) {
+  margin: 0 0 9px;
+}
+
+.message-bubble__markdown :deep(p:first-child) {
+  margin-top: 0;
+}
+
+.message-bubble__markdown :deep(p:last-child),
+.message-bubble__markdown :deep(ul:last-child),
+.message-bubble__markdown :deep(ol:last-child),
+.message-bubble__markdown :deep(blockquote:last-child),
+.message-bubble__markdown :deep(pre:last-child),
+.message-bubble__markdown :deep(table:last-child) {
+  margin-bottom: 0;
+}
+
+.message-bubble__markdown :deep(h1),
+.message-bubble__markdown :deep(h2),
+.message-bubble__markdown :deep(h3),
+.message-bubble__markdown :deep(h4),
+.message-bubble__markdown :deep(h5),
+.message-bubble__markdown :deep(h6) {
+  margin: 13px 0 7px;
+  color: #0d3a5c;
+  line-height: 1.45;
+  font-weight: 700;
+}
+
+.message-bubble__markdown :deep(h1) { font-size: 1.26em; }
+.message-bubble__markdown :deep(h2) { font-size: 1.16em; }
+.message-bubble__markdown :deep(h3) { font-size: 1.07em; }
+.message-bubble__markdown :deep(h4),
+.message-bubble__markdown :deep(h5),
+.message-bubble__markdown :deep(h6) { font-size: 1em; }
+
+.message-bubble__markdown :deep(h1:first-child),
+.message-bubble__markdown :deep(h2:first-child),
+.message-bubble__markdown :deep(h3:first-child),
+.message-bubble__markdown :deep(h4:first-child) {
+  margin-top: 0;
+}
+
+.message-bubble__markdown :deep(ul),
+.message-bubble__markdown :deep(ol) {
+  padding-left: 1.5em;
+}
+
+.message-bubble__markdown :deep(li) {
+  margin: 2px 0;
+}
+
+.message-bubble__markdown :deep(li > p) {
+  margin: 0;
+}
+
+.message-bubble__markdown :deep(code) {
+  padding: 1px 5px;
   border-radius: 4px;
-  padding: 0 3px;
+  background: rgba(14, 92, 126, 0.09);
+  color: #0b4a68;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.message-bubble__markdown :deep(pre) {
+  padding: 10px 12px;
+  overflow: auto;
+  max-height: 380px;
+  border-radius: 9px;
+  background: #0f2a3d;
+  color: #d6e6f2;
+  line-height: 1.6;
+}
+
+.message-bubble__markdown :deep(pre code) {
+  padding: 0;
+  background: none;
+  color: inherit;
+  font-size: 0.86em;
+}
+
+.message-bubble__markdown :deep(blockquote) {
+  padding: 5px 11px;
+  border-left: 3px solid rgba(18, 168, 196, 0.55);
+  border-radius: 0 7px 7px 0;
+  background: rgba(79, 211, 232, 0.09);
+  color: #3c5f78;
+}
+
+.message-bubble__markdown :deep(blockquote p) {
+  margin: 0 0 4px;
+}
+
+.message-bubble__markdown :deep(blockquote p:last-child) {
+  margin-bottom: 0;
+}
+
+.message-bubble__markdown :deep(table) {
+  display: block;
+  width: 100%;
+  overflow: auto;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+
+.message-bubble__markdown :deep(th),
+.message-bubble__markdown :deep(td) {
+  padding: 5px 9px;
+  border: 1px solid rgba(14, 92, 126, 0.16);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.message-bubble__markdown :deep(th) {
+  background: rgba(79, 211, 232, 0.13);
   font-weight: 600;
 }
 
-.message-bubble.is-user .message-bubble__danger {
-  color: #ffe1e3;
-  background: rgba(255, 255, 255, 0.18);
+.message-bubble__markdown :deep(a) {
+  color: #0e7fa8;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.message-bubble__markdown :deep(a:hover) {
+  color: #0b5f80;
+}
+
+.message-bubble__markdown :deep(hr) {
+  height: 0;
+  border: 0;
+  border-top: 1px solid rgba(14, 92, 126, 0.16);
+}
+
+.message-bubble__markdown :deep(strong) {
+  color: #0b3a5c;
+}
+
+/* 安全警示：Markdown 渲染后只给关键词标红，避免整段过重 */
+.message-bubble__markdown :deep(mark.md-danger) {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: var(--danger-bg);
+  color: var(--danger-color);
+  font-weight: 600;
 }
 
 /* ─────────── 消息附带的图片 / 文档 ─────────── */
