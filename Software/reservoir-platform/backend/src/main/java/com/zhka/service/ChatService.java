@@ -27,10 +27,12 @@ public class ChatService {
 
     private final DifyService difyService;
     private final NavigateService navigateService;
+    private final PlatformRuntimeService runtime;
 
-    public ChatService(DifyService difyService, NavigateService navigateService) {
+    public ChatService(DifyService difyService, NavigateService navigateService, PlatformRuntimeService runtime) {
         this.difyService = difyService;
         this.navigateService = navigateService;
+        this.runtime = runtime;
     }
 
     /** 流式对话：返回归一化后的事件流（不含任何 Web/SSE 细节） */
@@ -41,14 +43,17 @@ public class ChatService {
             return Flux.just(StreamEvent.error(EMPTY_QUERY_MESSAGE));
         }
 
+        // 把平台当前运行数据附在问题前，AI 在问水位/闸门/传感器/告警时可直接使用
+        String enriched = runtime.augment(query);
+
         // 累加状态按订阅创建，避免并发请求之间互相污染
-        return Flux.defer(() -> difyService.streamChat(query, conversationId, fileIds)
+        return Flux.defer(() -> difyService.streamChat(enriched, conversationId, fileIds)
                 .concatMap(new StreamAccumulator()::accept));
     }
 
     /** 阻塞式对话（调试用）：直接把清洗后的正文返回 */
     public Mono<ChatData> chatOnce(String rawQuery, String conversationId) {
-        return difyService.chatOnce(normalizeQuery(rawQuery), conversationId)
+        return difyService.chatOnce(runtime.augment(normalizeQuery(rawQuery)), conversationId)
                 .map(data -> {
                     NavigateService.Parsed parsed = navigateService.parse(data.reply());
                     return new ChatData(parsed.text(), data.conversationId());

@@ -208,6 +208,30 @@ curl -i -F "file=@./test.png" https://zhka.demo.ai.qianxiao.xin/api/files/upload
 3. Janus 视频网关（`BoatView.vue` 里 `http://192.168.2.14:8088/janus`）属于局域网设备，
    同样不经过本站 Nginx。
 
+### AI 助手读取平台实时数据
+
+每次调用 `/api/chat` 或 `/api/chat/stream` 时，后端会把一段 `【平台实时数据】`
+拼在用户问题前面再发给 Dify，内容包括：
+
+- 站点、数据时间、距今多久（超过 60 秒会提示 RTU 可能离线）；
+- 水位、液温、pH、ORP 的当前值、阈值和是否越界；
+- 1～6 号闸门状态（1=开，0=关）；
+- 最近 3 条阈值告警；
+- 使用说明：只在问题涉及水情/闸门/传感器/告警时使用，引用时说明数据时间，不要编造。
+
+这样不需要改 Dify 应用的提示词，任何聊天应用都能直接拿到当前数据。
+没有收到 RTU 数据时会明确写“当前没有收到”，避免模型编造读数。
+
+排查用只读接口（需要登录 JWT，返回与 AI 看到的一致的数据）：
+
+```bash
+curl -s https://zhka.demo.ai.qianxiao.xin/api/ai/runtime \
+  -H "Authorization: Bearer <登录 token>"
+```
+
+> 数据来自 MongoDB 最新一条水情记录（落库间隔 10 秒），不是 MQTT 内存里的瞬时值；
+> 如果 `ageSeconds` 很大，先检查 RTU 与 MQTT 连接，而不是 AI。
+
 ## 8. 常见报错速查
 
 | 现象 | 原因 |
