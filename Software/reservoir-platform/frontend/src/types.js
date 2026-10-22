@@ -51,7 +51,8 @@
  * @property {string} content 纯文本正文
  * @property {MessageHighlight[]} [highlights] 红色高亮片段
  * @property {ChatAttachment[]} [attachments] 多模态附件
- * @property {NavigateTarget} [navigateTo] AI 判定需要跳转到的页面
+ * @property {NavigateTarget} [navigateTo] AI 建议跳转到的页面（只显示入口，不自动跳）
+ * @property {string} [navigateReason] AI 给出的跳转理由，展示在入口按钮上
  * @property {string} [time]
  */
 

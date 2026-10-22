@@ -22,7 +22,12 @@
           <p class="chat-page__welcome">{{ WELCOME_TEXT }}</p>
         </header>
 
-        <MessageList :messages="messages" :loading="loading" :loading-text="LOADING_TEXT" />
+        <MessageList
+          :messages="messages"
+          :loading="loading"
+          :loading-text="LOADING_TEXT"
+          @navigate="handleMessageNavigate"
+        />
 
         <QuickTags :tags="QUICK_TAGS" :on-tag-click="handleTagClick" />
 
@@ -75,6 +80,7 @@ import VoiceToggle from './components/VoiceToggle.vue'
 
 import { checkHealth, streamChat, uploadFile, toChatAttachment } from './api/chat.js'
 import { parseReply } from './router/navigate.js'
+import { targetTitle } from './router/targets.js'
 import { useSpeechSynthesis } from './voice/useSpeechSynthesis.js'
 import { voiceEnabled, voiceRate, setVoiceEnabled, setVoiceRate } from './composables/usePreferences.js'
 import { extractHighlights, nowTime, uid } from './utils/highlight.js'
@@ -150,6 +156,21 @@ function navigateTo(target, reason) {
 
 function handleNavigate(target) {
   navigateTo(target)
+}
+
+/**
+ * AI 回答里的页面入口被点击时才会走到这里。
+ * 平台不再自动跳转，避免用户还没看完回答就被带走。
+ * @param {{ target?: string, reason?: string }} payload
+ */
+function handleMessageNavigate(payload) {
+  const target = payload?.target
+  if (!target) return
+  if (target === currentRoute.value) {
+    antMessage.info(`当前已在「${targetTitle(target)}」页面`)
+    return
+  }
+  navigateTo(target, payload.reason || `正在打开「${targetTitle(target)}」`)
 }
 
 function handleLinkClick(link) {
@@ -231,7 +252,7 @@ function appendMessage(message) {
 /**
  * 替换整条消息对象以触发列表更新
  * @param {string} id
- * @param {Partial<Pick<import('./types.js').ChatMessage, 'content' | 'highlights' | 'navigateTo'>>} patch
+ * @param {Partial<Pick<import('./types.js').ChatMessage, 'content' | 'highlights' | 'navigateTo' | 'navigateReason'>>} patch
  */
 function updateMessage(id, patch) {
   messages.value = messages.value.map((m) => (m.id === id ? { ...m, ...patch } : m))
@@ -338,6 +359,13 @@ async function handleSend() {
             })
           } else if (evt.type === 'navigate') {
             navCommand = evt.command
+            // 指令一到就把入口按钮显示出来，但绝不自动跳转
+            if (evt.command?.target) {
+              updateMessage(replyId, {
+                navigateTo: evt.command.target,
+                navigateReason: evt.command.reason || '',
+              })
+            }
           } else if (evt.type === 'done') {
             if (evt.conversation_id) conversationId.value = evt.conversation_id
           } else if (evt.type === 'error') {
@@ -357,13 +385,19 @@ async function handleSend() {
       const tip = finalText
         ? `${finalText}\n\n（${streamError}）`
         : `抱歉，${streamError}。请确认后端服务已启动后重试。`
-      updateMessage(replyId, { content: tip, highlights: extractHighlights(tip) })
+      updateMessage(replyId, {
+        content: tip,
+        highlights: extractHighlights(tip),
+        navigateTo: undefined,
+        navigateReason: '',
+      })
       antMessage.error(streamError)
     } else {
       updateMessage(replyId, {
         content: finalText,
         highlights: extractHighlights(finalText),
         navigateTo: command?.target,
+        navigateReason: command?.reason || '',
       })
     }
 
@@ -376,13 +410,6 @@ async function handleSend() {
     // ③ AI 回答结束 → 语音播报（同时驱动嘴型）
     if (!streamError && finalText.trim()) {
       ttsSpeak(finalText)
-    }
-
-    // ④ 若 Dify 下发了跳转指令，延迟一点执行，让用户先看到回答
-    if (command) {
-      const target = command.target
-      const reason = command.reason
-      window.setTimeout(() => navigateTo(target, reason), 900)
     }
   } catch (e) {
     // 附件上传阶段的失败

@@ -168,21 +168,61 @@
   opacity: 0.7;
 }
 
-/* AI 触发的页面跳转提示按钮 */
+/* AI 建议的页面入口：只展示，点击后才跳转 */
 .message-bubble__navigate {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 9px;
-  padding: 7px 14px;
+  gap: 10px;
+  width: fit-content;
+  max-width: min(460px, 100%);
+  margin-top: 10px;
+  padding: 9px 13px;
   border-radius: 10px;
   border: 1px solid rgba(79, 211, 232, 0.55);
   background: linear-gradient(135deg, rgba(79, 211, 232, 0.18), rgba(18, 168, 196, 0.14));
   color: #0e5c7e;
   font-size: calc(0.88em * var(--chat-font-scale));
   font-weight: 600;
+  text-align: left;
   cursor: pointer;
   transition: all 0.22s ease;
+}
+
+.message-bubble__navigate-icon {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  font-size: 1.05em;
+}
+
+.message-bubble__navigate-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.message-bubble__navigate-title {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.message-bubble__navigate-reason {
+  overflow: hidden;
+  font-size: 0.78em;
+  font-weight: 400;
+  opacity: 0.72;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-bubble__navigate-hint {
+  flex: 0 0 auto;
+  margin-left: 4px;
+  font-size: 0.72em;
+  font-weight: 500;
+  opacity: 0.55;
+  white-space: nowrap;
 }
 
 .message-bubble__navigate:hover {
@@ -191,4 +231,9 @@
   color: #fff;
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(18, 168, 196, 0.34);
+}
+
+.message-bubble__navigate:hover .message-bubble__navigate-reason,
+.message-bubble__navigate:hover .message-bubble__navigate-hint {
+  opacity: 0.9;
 }

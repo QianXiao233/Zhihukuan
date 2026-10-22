@@ -1,7 +1,12 @@
 <template>
   <div ref="listRef" class="message-list">
     <div class="message-list__inner">
-      <MessageBubble v-for="message in messages" :key="message.id" :message="message" />
+      <MessageBubble
+        v-for="message in messages"
+        :key="message.id"
+        :message="message"
+        @navigate="emit('navigate', $event)"
+      />
 
       <div v-if="loading" class="message-list__loading">
         <span class="message-list__dots">
@@ -28,6 +33,7 @@ const props = defineProps({
 })
 
 const listRef = ref(null)
+const emit = defineEmits(['navigate'])
 
 /** 新消息自动滚到底部 */
 function scrollToBottom() {

@@ -37,15 +37,22 @@
         </template>
       </div>
 
-      <!-- AI 触发的页面跳转提示 -->
+      <!-- AI 建议的页面入口：只展示按钮，用户点了才跳转 -->
       <button
         v-if="message.navigateTo"
         class="message-bubble__navigate"
         type="button"
+        :aria-label="`打开${targetTitle}`"
         @click="goNavigate"
       >
-        <ExportOutlined />
-        前往「{{ targetTitle }}」
+        <span class="message-bubble__navigate-icon"><ExportOutlined /></span>
+        <span class="message-bubble__navigate-body">
+          <span class="message-bubble__navigate-title">前往「{{ targetTitle }}」</span>
+          <span v-if="message.navigateReason" class="message-bubble__navigate-reason">
+            {{ message.navigateReason }}
+          </span>
+        </span>
+        <span class="message-bubble__navigate-hint">点击打开</span>
       </button>
     </div>
   </div>
@@ -53,32 +60,26 @@
 
 <script setup>
 import { computed } from 'vue'
-import { useRouter } from 'vue-router'
 import { FileOutlined, ExportOutlined, RobotOutlined, UserOutlined } from '@ant-design/icons-vue'
+import { targetTitle as titleOf } from '../router/targets.js'
 
 const props = defineProps({
       message: { type: Object, required: true },
     })
-
-const router = useRouter()
+const emit = defineEmits(['navigate'])
 
 /** 页面标识 → 中文名，用于跳转按钮文案 */
-const TARGET_TITLE = {
-  home: '智能问答',
-  monitor: '水库监测总览',
-  inspection: '巡检台账',
-  policy: '政策文档查阅',
-  flood: '防汛调度',
-  ecology: '生态管护',
-}
-
 const targetTitle = computed(() =>
-  props.message.navigateTo ? TARGET_TITLE[props.message.navigateTo] : '',
+  props.message.navigateTo ? titleOf(props.message.navigateTo) : '',
 )
 
+/** 只响应用户点击，不做任何自动跳转 */
 function goNavigate() {
   if (!props.message.navigateTo) return
-  void router.push({ name: props.message.navigateTo })
+  emit('navigate', {
+    target: props.message.navigateTo,
+    reason: props.message.navigateReason || '',
+  })
 }
 
 /** 图片放大查看：直接新窗口打开，避免额外引入预览组件 */
