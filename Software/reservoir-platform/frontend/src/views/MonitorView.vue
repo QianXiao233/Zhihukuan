@@ -16,7 +16,7 @@
       <section class="overview-main-grid">
         <article class="overview-card twin-card">
           <header class="overview-card__head">
-            <div><span class="section-icon section-icon--blue"><RadarChartOutlined /></span><h2>库区示意图</h2><span class="live-chip">结构示意</span></div>
+            <div><span class="section-icon section-icon--blue"><RadarChartOutlined /></span><h2>数字孪生沙盘</h2><span class="live-chip"><i></i>{{ twinStatus.failed ? '结构示意' : '三维沙盘' }}</span></div>
             <button type="button" class="text-action" @click="toggleMapFullscreen">{{ mapFullscreen ? '退出全屏' : '查看全屏' }} <RightOutlined /></button>
           </header>
             <div class="twin-map" :class="{ 'is-fullscreen': mapFullscreen }">
@@ -49,8 +49,17 @@
               <circle cx="408" cy="238" r="6" fill="#fff" stroke="#138ec8" stroke-width="5"/>
               <circle cx="596" cy="270" r="6" fill="#fff" stroke="#19b998" stroke-width="5"/>
             </svg>
+            <DamTwinScene
+              ref="twinRef"
+              :level="twinSceneLevel"
+              :thresholds="twinSceneThresholds"
+              :gates="twinGates"
+              :alarm="twinAlarm"
+              @status="onTwinStatus"
+            />
+            <button v-if="mapFullscreen" type="button" class="twin-fullscreen-exit" @click="toggleMapFullscreen">退出全屏</button>
             <div class="map-compass"><span>N</span><b>↗</b></div>
-              <div class="map-mini">{{ currentDamName }}<br><small>结构示意 · 非实测地图</small></div>
+              <div class="map-mini">{{ currentDamName }}<br><small>{{ twinStatus.failed ? '结构示意 · 非实测地图' : '三维沙盘 · 拖拽旋转' }}</small></div>
           </div>
         </article>
 
@@ -128,8 +137,9 @@ import {
   RadarChartOutlined,
   RightOutlined,
 } from '@ant-design/icons-vue'
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import ViewShell from './ViewShell.vue'
+import DamTwinScene from '../components/DamTwinScene.vue'
 import { useRouter } from 'vue-router'
 import { useReservoirMqtt } from '../composables/useReservoirMqtt.js'
 import { useCurrentDam } from '../composables/useCurrentDam.js'
@@ -137,6 +147,8 @@ import { dataSummary, listParams } from '../api/manageApi.js'
 
 const router = useRouter()
 const mapFullscreen = ref(false)
+const twinRef = ref(null)
+const twinStatus = ref({ failed: false, modelLoaded: false })
 const { mqttConnected, realtime, gates, toggleGate } = useReservoirMqtt()
 const { currentDam, currentDamName, loadDams } = useCurrentDam()
 const params = ref([])
@@ -148,6 +160,46 @@ const hasRealtime = computed(() => Boolean(realtime.value))
 const hasGateStatus = computed(() => Boolean(realtime.value?.relayReported))
 const levelText = computed(() => realtime.value?.level == null ? '—' : Number(realtime.value.level).toFixed(2))
 const levelHint = computed(() => !hasRealtime.value ? '等待 RTU 水位数据' : currentDam.value?.floodWaterLevel == null ? '档案未配置汛限水位' : `档案汛限 ${displayValue(currentDam.value.floodWaterLevel)} m`)
+
+function toNumber(value) {
+  return value === null || value === undefined || value === '' || !Number.isFinite(Number(value)) ? null : Number(value)
+}
+
+const twinLevel = computed(() => toNumber(realtime.value?.level))
+const twinThresholds = computed(() => ({
+  die: toNumber(currentDam.value?.dieWaterLevel),
+  design: toNumber(currentDam.value?.designWaterLevel),
+  flood: toNumber(currentDam.value?.floodWaterLevel),
+}))
+const twinGates = computed(() => (Array.isArray(gates.value) ? gates.value : []).map((state) => state === 1 ? 1 : 0))
+const twinAlarm = computed(() => {
+  const level = twinLevel.value
+  const { design, flood } = twinThresholds.value
+  if (level === null) return 0
+  if (flood !== null && level >= flood) return 1
+  if (design !== null && level >= design) return 0.45
+  return 0
+})
+
+function onTwinStatus(status) {
+  twinStatus.value = status
+}
+
+/**
+ * 三维沙盘的水位是“视觉水位”：RTU 的 level 是 0.2~5 m 的过程量，
+ * 大坝档案的 28.3/38.36 m 是库容高程，两者不是同一基准。
+ * 这里按监测参数的上下限把 level 归一化到模型自己的水位区间，避免水面掉进坑里。
+ */
+const waterParam = computed(() => findParam('water_level', 'level'))
+const twinSceneThresholds = { die: 0.6, design: 1.4, flood: 1.55 }
+const twinSceneLevel = computed(() => {
+  const level = twinLevel.value
+  const low = toNumber(waterParam.value?.paramLowValue)
+  const high = toNumber(waterParam.value?.paramHighValue)
+  if (level === null || low === null || high === null || high <= low) return 1.4
+  const ratio = Math.min(1, Math.max(0, (level - low) / (high - low)))
+  return 0.8 + ratio * 0.75
+})
 
 function displayValue(value) {
   return value === null || value === undefined || value === '' ? '—' : Number.isFinite(Number(value)) ? Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 2 }) : value
@@ -205,7 +257,11 @@ function goToBoat() { void router.push({ name: 'flood' }) }
 function goToMonitor() { void router.push({ name: 'monitor-detail' }) }
 function goToEcology() { void router.push({ name: 'ecology' }) }
 function goToArchive() { void router.push({ name: 'dam' }) }
-function toggleMapFullscreen() { mapFullscreen.value = !mapFullscreen.value }
+async function toggleMapFullscreen() {
+  mapFullscreen.value = !mapFullscreen.value
+  await nextTick()
+  twinRef.value?.resize()
+}
 
 onMounted(() => { void loadOverviewData() })
 </script>
@@ -240,10 +296,12 @@ onMounted(() => { void loadOverviewData() })
 .text-action:hover { color: #1676e8; }
 .fresh-text { color: #9aabbc; font-size: 10px; white-space: nowrap; }
 
-.twin-map { position: relative; height: calc(100% - 39px); min-height: 390px; overflow: hidden; border-radius: 11px; background: #c7e9ea; }
-.twin-map__terrain { position: absolute; inset: 0; width: 100%; height: 100%; }
-.map-compass { position: absolute; right: 13px; bottom: 13px; display: flex; flex-direction: column; align-items: center; color: #507b8a; font-size: 9px; }.map-compass b { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin-top: 2px; border-radius: 50%; background: rgba(255,255,255,.8); color: #157dba; font-size: 18px; }
-.map-mini { position: absolute; left: 13px; bottom: 13px; padding: 7px 10px; border-radius: 6px; background: rgba(22, 88, 119, .72); color: #e9fdff; font-size: 10px; }.map-mini small { color: #a9d5df; font-size: 8px; }
+.twin-map { position: relative; height: calc(100% - 39px); min-height: 390px; overflow: hidden; border-radius: 11px; background: #0a2029; }
+.twin-map__terrain { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; }
+.map-compass { position: absolute; right: 13px; bottom: 13px; z-index: 2; display: flex; flex-direction: column; align-items: center; color: #9fd8ee; font-size: 9px; pointer-events: none; }.map-compass b { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin-top: 2px; border-radius: 50%; background: rgba(6, 30, 42, .72); color: #7fe0ff; font-size: 18px; border: 1px solid rgba(79, 209, 255, .35); }
+.map-mini { position: absolute; left: 13px; bottom: 13px; z-index: 2; padding: 7px 10px; border-radius: 6px; background: rgba(6, 30, 42, .72); color: #e9fdff; font-size: 10px; border: 1px solid rgba(79, 209, 255, .25); pointer-events: none; }.map-mini small { color: #9fd8ee; font-size: 8px; }
+.twin-fullscreen-exit { position: absolute; top: 12px; right: 12px; z-index: 3; padding: 6px 12px; border: 1px solid rgba(79, 209, 255, .45); border-radius: 7px; background: rgba(6, 30, 42, .82); color: #dff8ff; font-size: 11px; cursor: pointer; }
+.twin-fullscreen-exit:hover { border-color: #7fe0ff; background: rgba(10, 52, 70, .9); }
 
 .level-card { display: flex; flex-direction: column; }
 .level-overview { display: flex; align-items: center; gap: 17px; min-height: 140px; }

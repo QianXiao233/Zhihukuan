@@ -1,0 +1,75 @@
+{
+  "overview": {
+    "position": [-2, 100, 78],
+    "target": [-2, 0, -2],
+    "fov": 36
+  },
+  "points": [
+    {
+      "id": "cam-01",
+      "code": "CAM-01",
+      "label": "闸室全景",
+      "role": "6 孔闸门与检修平台",
+      "position": [16, 26, 24],
+      "target": [5, 5, 0],
+      "fov": 46,
+      "guardian": false,
+      "stream": ""
+    },
+    {
+      "id": "cam-02",
+      "code": "CAM-02",
+      "label": "库区水面",
+      "role": "弧形库区与环库公路",
+      "position": [-26, 26, 32],
+      "target": [-20, 1, -4],
+      "fov": 46,
+      "guardian": false,
+      "stream": ""
+    },
+    {
+      "id": "cam-03",
+      "code": "CAM-03",
+      "label": "阶梯溢洪道",
+      "role": "跌水台阶与导墙",
+      "position": [26, 22, 22],
+      "target": [14, 3, 0],
+      "fov": 46,
+      "guardian": true,
+      "stream": ""
+    },
+    {
+      "id": "cam-04",
+      "code": "CAM-04",
+      "label": "进水口",
+      "role": "6 孔圆形进水口",
+      "position": [-8, 15, 18],
+      "target": [4, 4, 0],
+      "fov": 44,
+      "guardian": true,
+      "stream": ""
+    },
+    {
+      "id": "cam-05",
+      "code": "CAM-05",
+      "label": "下游池",
+      "role": "长条下游池与护岸",
+      "position": [50, 20, 26],
+      "target": [40, 1, 2],
+      "fov": 46,
+      "guardian": true,
+      "stream": ""
+    },
+    {
+      "id": "cam-06",
+      "code": "CAM-06",
+      "label": "风机与光伏",
+      "role": "山丘风机与光伏阵列",
+      "position": [-2, 34, -32],
+      "target": [-22, 8, -22],
+      "fov": 48,
+      "guardian": false,
+      "stream": ""
+    }
+  ]
+}

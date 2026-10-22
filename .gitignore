@@ -140,3 +140,8 @@ deploy/_upload/
 models/
 weights/
 datasets/
+
+# 前端 3D 资源：大坝沙盘模型必须入库（上面的 models/ 是给数据集用的）
+!Software/reservoir-platform/frontend/public/models/
+!Software/reservoir-platform/frontend/public/models/*
+
