@@ -1,0 +1,299 @@
+/* ─────────────────────────────────────────────
+   移动端适配：窄屏公共覆盖
+   页面自身的 scoped 样式优先处理布局，这里兜底
+   表格、卡片网格、弹窗和工具栏在手机上的表现。
+   ───────────────────────────────────────────── */
+/* 桌面窄窗口 / 平板：页面容器不要用固定最小宽度撑出横向滚动 */
+@media (max-width: 1400px) {
+  .overview-page,
+  .monitor-page,
+  .boat-page,
+  .ac-page,
+  .vc-page {
+    min-width: 0 !important;
+  }
+}
+
+@media (max-width: 900px) {
+  html,
+  body,
+  #app {
+    min-height: 100%;
+    height: 100%;
+  }
+
+  /* 页面容器不要撑出横向滚动 */
+  .overview-page,
+  .monitor-page,
+  .ac-page,
+  .vc-page,
+  .boat-page,
+  .data-page,
+  .bus-page,
+  .cs-page,
+  .manage-panel,
+  .user-panel,
+  .archive-panel,
+  .notification-panel {
+    min-width: 0 !important;
+    max-width: 100%;
+  }
+
+  /* 卡片与标题 */
+  .view-card {
+    padding: 14px !important;
+    border-radius: 13px;
+  }
+
+  .view-card__title {
+    margin-bottom: 10px !important;
+    font-size: 13px;
+  }
+
+  .view-card__toolbar,
+  .manage-toolbar,
+  .card-head,
+  .notification-toolbar,
+  .cs-toolbar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+
+  .manage-subtitle,
+  .cs-subtitle {
+    margin-top: -3px !important;
+    line-height: 1.6;
+  }
+
+  .manage-actions,
+  .cs-toolbar__actions,
+  .notification-actions,
+  .card-head__actions {
+    flex-wrap: wrap;
+    justify-content: flex-start !important;
+    width: 100%;
+  }
+
+  .manage-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .manage-actions > * {
+    width: 100% !important;
+  }
+
+  .manage-actions .primary-btn,
+  .manage-actions .plain-btn {
+    width: 100%;
+  }
+
+  .manage-empty {
+    padding-left: 12px !important;
+    text-align: left !important;
+  }
+
+  .manage-actions .manage-input,
+  .manage-actions .search-input,
+  .manage-input,
+  .search-input,
+  .cs-input {
+    width: 100% !important;
+    flex: 1 1 100%;
+  }
+
+  /* 指标与卡片网格 */
+  .view-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .view-metric {
+    padding: 11px;
+  }
+
+  .view-metric__value {
+    font-size: 19px;
+  }
+
+  .settings-grid,
+  .form-grid,
+  .permission-grid,
+  .archive-grid,
+  .param-grid,
+  .stats-pair,
+  .bus-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .runtime-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 9px;
+  }
+
+  /* 表格：统一横向滚动，不把页面撑宽 */
+  .table-wrap,
+  .table-scroll,
+  .cs-table-wrap,
+  .ac-table-wrap,
+  .bus-table-wrap,
+  .monitor-card--wide {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .manage-table,
+  .cs-table,
+  .ac-table,
+  .monitor-table,
+  .bus-table {
+    min-width: 640px;
+  }
+
+  .view-card {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .view-table {
+    width: 100%;
+    min-width: 0;
+    font-size: 10px;
+  }
+
+  .view-table th,
+  .view-table td {
+    padding: 8px 6px;
+    white-space: normal;
+  }
+
+  .pagination {
+    flex-wrap: wrap;
+    justify-content: center !important;
+    gap: 8px;
+  }
+
+  /* 弹窗：手机上从底部升起 */
+  .modal-backdrop,
+  .cs-modal-backdrop {
+    align-items: flex-end !important;
+    padding: 8px !important;
+  }
+
+  .manage-modal,
+  .cs-modal {
+    width: 100% !important;
+    max-height: 92dvh;
+    padding: 16px !important;
+    border-radius: 16px 16px 0 0 !important;
+  }
+
+  .modal-head,
+  .cs-modal__head {
+    margin-bottom: 12px !important;
+  }
+
+  .modal-foot,
+  .cs-modal__foot {
+    flex-direction: column;
+    align-items: stretch !important;
+    gap: 10px;
+  }
+
+  .modal-foot > div,
+  .cs-modal__foot > div {
+    display: flex;
+    gap: 8px;
+  }
+
+  .modal-foot button,
+  .cs-modal__foot button {
+    flex: 1;
+  }
+
+  /* 通知、参数、列表类 */
+  .notice-head {
+    flex-wrap: wrap;
+    gap: 4px 8px;
+  }
+
+  .notice-foot {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .notice-options {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .view-list__head {
+    flex-wrap: wrap;
+  }
+
+  .view-list {
+    margin-top: 10px;
+  }
+
+  .view-list__time {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  /* 表单和筛选 */
+  .filter-row,
+  .range-row,
+  .gate-row,
+  .push-row,
+  .audit-filter {
+    flex-direction: column;
+    align-items: stretch !important;
+    gap: 9px !important;
+  }
+
+  .filter-row label,
+  .range-group,
+  .gate-row label,
+  .push-row label,
+  .audit-filter input {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .range-group input {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .filter-actions {
+    flex-wrap: wrap;
+  }
+
+  /* 统一触控尺寸 */
+  .primary-btn,
+  .plain-btn,
+  .push-primary,
+  .push-plain,
+  .cs-btn {
+    min-height: 36px;
+  }
+}
+
+@media (max-width: 520px) {
+  .view-metrics {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .runtime-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .view-card {
+    padding: 12px !important;
+  }
+
+  .platform-page.font-large :deep(.view-card) {
+    zoom: 1;
+  }
+}

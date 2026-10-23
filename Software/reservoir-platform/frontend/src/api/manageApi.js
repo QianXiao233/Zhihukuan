@@ -29,6 +29,14 @@ export const addDevice = (values) => request('/api/manage/device/add', { method:
 export const updateDevice = (values) => request('/api/manage/device/update', { method: 'POST', body: formBody(values) })
 export const deleteDevice = (deviceId) => request('/api/manage/device/delete', { method: 'POST', body: formBody({ deviceId }, false) })
 
+// ─────────── 监控画面来源（视频墙） ───────────
+
+export const listCameraSources = () => request('/api/manage/camera/list')
+export const getTwinAlerts = () => request('/api/twin/alerts')
+export const addCameraSource = (values) => request('/api/manage/camera/add', { method: 'POST', body: formBody(values) })
+export const updateCameraSource = (values) => request('/api/manage/camera/update', { method: 'POST', body: formBody(values) })
+export const deleteCameraSource = (sourceId) => request('/api/manage/camera/delete', { method: 'POST', body: formBody({ sourceId }, false) })
+
 export const listParams = () => request('/api/manage/param/list')
 export const addParam = (values) => request('/api/manage/param/add', { method: 'POST', body: formBody(values) })
 export const updateParam = (values) => request('/api/manage/param/update', { method: 'POST', body: formBody(values) })

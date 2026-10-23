@@ -1,6 +1,8 @@
 <template>
   <div class="platform-page" :class="[`font-${uiPreferences.fontSize}`, { 'is-compact': uiPreferences.compact }]">
-    <aside class="platform-sidebar">
+    <div v-if="mobileNavOpen" class="platform-nav-overlay" @click="mobileNavOpen = false"></div>
+    <aside class="platform-sidebar" :class="{ 'is-mobile-open': mobileNavOpen }">
+      <button type="button" class="platform-nav-close" aria-label="关闭导航" @click="mobileNavOpen = false"><CloseOutlined /></button>
       <div class="platform-brand">
         <div class="platform-brand__mark"><span></span><span></span><span></span></div>
         <div>
@@ -32,7 +34,7 @@
       <nav class="platform-nav" aria-label="平台功能导航">
         <template v-for="group in NAV_GROUPS" :key="group.label">
           <p class="platform-nav__label">{{ group.label }}</p>
-          <button v-for="item in group.items.filter(item => !['users', 'service-bus'].includes(item.name) || isAdmin)" :key="item.name" type="button" class="platform-nav__item" :class="{ 'is-active': isActive(item) }" @click="navigate(item.name)">
+          <button v-for="item in group.items.filter(item => !['users', 'service-bus', 'camera-sources'].includes(item.name) || isAdmin)" :key="item.name" type="button" class="platform-nav__item" :class="{ 'is-active': isActive(item) }" @click="navigate(item.name)">
             <component :is="item.icon" class="platform-nav__icon" />
             <span>{{ item.title }}</span>
             <i v-if="item.name === 'notifications' && unreadCount" class="platform-nav__badge">{{ unreadCount > 99 ? '99+' : unreadCount }}</i>
@@ -51,6 +53,7 @@
 
     <section class="platform-content">
       <header class="platform-topbar">
+        <button type="button" class="platform-menu-button" aria-label="打开导航" @click="mobileNavOpen = !mobileNavOpen"><MenuOutlined /></button>
         <div class="platform-breadcrumb">
           <span>{{ currentDamName }}</span><span class="platform-breadcrumb__slash">/</span><strong>{{ title }}</strong>
         </div>
@@ -81,19 +84,22 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
+  AlertOutlined,
   ApiOutlined,
   AppstoreOutlined,
   BankOutlined,
   BellOutlined,
+  CloseOutlined,
   CloudOutlined,
   DashboardOutlined,
   DatabaseOutlined,
   DownOutlined,
   FileProtectOutlined,
   FundProjectionScreenOutlined,
+  MenuOutlined,
   ProfileOutlined,
   QuestionCircleOutlined,
   SettingOutlined,
@@ -102,6 +108,7 @@ import {
   TeamOutlined,
   ToolOutlined,
   ThunderboltOutlined,
+  VideoCameraOutlined,
 } from '@ant-design/icons-vue'
 import { clearAuth, validateToken } from '../api/auth.js'
 import { getRuntime, unreadMessageCount } from '../api/manageApi.js'
@@ -117,10 +124,12 @@ const uiPreferences = ref({ compact: false, fontSize: 'normal' })
 function updateUiPreferences() { uiPreferences.value = { compact: localStorage.getItem('platform.compact') === 'true', fontSize: localStorage.getItem('platform.fontSize') || 'normal' }; clearInterval(notificationTimer); notificationTimer = undefined; if(localStorage.getItem('platform.autoRefresh') !== 'false') notificationTimer = window.setInterval(refreshUnread, 30000) }
 const route = useRoute()
 const router = useRouter()
+watch(() => route.fullPath, () => { mobileNavOpen.value = false })
 const username = localStorage.getItem('username') || '管理员'
 const { dams, selectedDamId, currentDamName, loadDams, selectDam } = useCurrentDam()
 const damSelectorRoot = ref(null)
 const damMenuOpen = ref(false)
+const mobileNavOpen = ref(false)
 const isAdmin = ref([0,3].includes(Number(localStorage.getItem('level') ?? 1)) || Number(localStorage.getItem('level')) > 3)
 const currentTime = ref('')
 const unreadCount = ref(0)
@@ -168,10 +177,18 @@ onBeforeUnmount(() => { window.removeEventListener('platform-preferences', updat
 
 const NAV_GROUPS = [
   {
+    label: '监控中心',
+    items: [
+      { name: 'monitoring-center', title: '监控中心', icon: VideoCameraOutlined },
+      { name: 'monitor-detail', title: '实时监测', icon: DashboardOutlined },
+      { name: 'alarm-center', title: '告警中心', icon: AlertOutlined },
+      { name: 'camera-sources', title: '画面来源', icon: SettingOutlined },
+    ],
+  },
+  {
     label: '业务功能',
     items: [
       { name: 'monitor', title: '运营总览', icon: AppstoreOutlined },
-      { name: 'monitor-detail', title: '实时监测', icon: DashboardOutlined },
       { name: 'inspection', title: '巡检台账', icon: ProfileOutlined },
       { name: 'flood', title: '防汛调度', icon: ThunderboltOutlined },
       { name: 'ecology', title: '生态管护', icon: CloudOutlined },
@@ -206,6 +223,7 @@ function isActive(item) {
 }
 
 function navigate(name) {
+  mobileNavOpen.value = false
   void router.push({ name })
 }
 

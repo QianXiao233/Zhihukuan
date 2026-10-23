@@ -83,6 +83,7 @@ onBeforeUnmount(() => {
 defineExpose({
   resize: () => scene?.resize(),
   overview: () => scene?.overview(),
+  project: (point) => scene?.projectPoint(point),
 })
 </script>
 

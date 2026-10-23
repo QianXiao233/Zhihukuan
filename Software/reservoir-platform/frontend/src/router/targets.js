@@ -7,6 +7,10 @@
 export const TARGET_TITLES = {
   home: '智能问答',
   monitor: '水库监测总览',
+  'monitoring-center': '监控中心',
+  'monitor-detail': '实时监测',
+  'alarm-center': '告警中心',
+  'camera-sources': '画面来源',
   inspection: '巡检台账',
   policy: '政策文档查阅',
   flood: '防汛调度',

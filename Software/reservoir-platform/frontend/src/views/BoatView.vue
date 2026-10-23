@@ -273,3 +273,21 @@ onBeforeUnmount(() => { clearInterval(commandTimer); clearTimeout(releaseTimer);
 /* 船载视角：Janus WebRTC 主画面 */
 .boat-stream-card{min-height:0}.boat-stream-card header{margin-bottom:10px}.boat-stream-card header>div{display:flex;flex-direction:column;gap:3px}.boat-stream-card header small{color:#9aabba;font-size:9px}.fresh-text.stream-live{color:#1b9e76}.fresh-text.stream-connecting{color:#2b8fca}.fresh-text.stream-error{color:#c16b52}.boat-stream-viewport{position:relative;min-height:238px;overflow:hidden;border-radius:10px;background:#071a2e;box-shadow:inset 0 0 0 1px rgba(116,190,230,.18)}.boat-stream-video{display:block;width:100%;height:238px;object-fit:cover;background:#071a2e}.boat-stream-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#bfd1de;text-align:center;background:radial-gradient(circle at center,rgba(21,116,156,.24),rgba(4,21,39,.94) 64%)}.boat-stream-empty strong{font-size:13px;font-weight:600}.boat-stream-empty small{color:#7d9bae;font-size:9px}.stream-radar{position:relative;width:56px;height:56px;border:1px solid rgba(97,205,222,.45);border-radius:50%;background:repeating-radial-gradient(circle,transparent 0 12px,rgba(84,192,215,.18) 13px 14px)}.stream-radar:before{content:'';position:absolute;left:50%;top:5px;bottom:5px;width:1px;background:rgba(118,225,232,.42)}.stream-radar:after{content:'';position:absolute;top:50%;left:5px;right:5px;height:1px;background:rgba(118,225,232,.42)}.stream-radar span{position:absolute;left:50%;top:50%;width:6px;height:6px;border-radius:50%;background:#48d7cf;transform:translate(-50%,-50%);box-shadow:0 0 0 7px rgba(72,215,207,.12)}.stream-radar i{position:absolute;width:4px;height:4px;border-radius:50%;background:#42cbe0}.stream-radar i:first-child{left:14px;top:16px}.stream-radar i:nth-child(2){right:12px;bottom:14px}.stream-connect-button{height:31px;padding:0 14px;border:1px solid rgba(95,203,224,.45);border-radius:7px;background:rgba(23,138,174,.35);color:#d8fbff;font-size:10px;cursor:pointer}.stream-connect-button:disabled{cursor:not-allowed;opacity:.55}.stream-overlay,.stream-bottom{position:absolute;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:9px 11px;color:#d6eef4;font-size:9px;background:linear-gradient(180deg,rgba(2,17,32,.7),transparent)}.stream-overlay{top:0}.stream-overlay>span:first-child{display:flex;align-items:center;gap:5px}.stream-overlay i{width:6px;height:6px;border-radius:50%;background:#95a8b4}.stream-overlay i.online{background:#37d3a2;box-shadow:0 0 0 3px rgba(55,211,162,.14)}.stream-overlay>span:last-child{color:#9ab4c4}.stream-bottom{bottom:0;background:linear-gradient(0deg,rgba(2,17,32,.78),transparent);color:#a8c5d0}.stream-bottom>div{display:flex;gap:7px}.stream-bottom button{border:1px solid rgba(188,229,238,.3);border-radius:5px;background:rgba(4,25,42,.48);color:#d4edf2;font-size:9px;padding:4px 7px;cursor:pointer}
 </style>
+<style scoped>
+@media(max-width:900px){
+  .boat-page{min-width:0;gap:10px}
+  .boat-hero{grid-template-columns:1fr;min-height:0}
+  .boat-hero__copy{padding:20px}
+  .boat-hero h2{font-size:20px;margin-top:8px}
+  .boat-hero p{font-size:12px}
+  .boat-status{margin-top:16px;flex-wrap:wrap}
+  .boat-visual{min-height:200px}
+  .boat-grid,.boat-control-grid{grid-template-columns:1fr;gap:10px}
+  .boat-card:last-child{grid-column:auto}
+  .boat-card{padding:14px}
+  .boat-card dl{grid-template-columns:1fr 1fr;gap:12px 8px}
+  .keypad{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .boat-stream-card header{flex-wrap:wrap;gap:6px}
+  .boat-stream-video,.boat-stream-viewport{min-height:210px;height:210px}
+}
+</style>

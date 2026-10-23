@@ -70,6 +70,25 @@ New-NetFirewallRule -DisplayName "MediaMTX WebRTC" -Direction Inbound -Protocol 
 New-NetFirewallRule -DisplayName "MediaMTX WebRTC UDP" -Direction Inbound -Protocol UDP -LocalPort 8189 -Action Allow
 ```
 
+## 接入平台监控中心
+
+平台「监控中心 → 画面来源」由管理员维护，支持两种方式：
+
+- **WebRTC**：直接填 WebRTC/WHEP 地址，例如 `http://192.168.2.7:8889/topcam/whep`。
+  只填到流名称（`http://192.168.2.7:8889/topcam`）也可以，播放时会自动补 `/whep`。
+- **RTSP**：填摄像机 `rtsp://` 地址、网关地址（如 `http://192.168.2.7:8889`）
+  和网关播放标识（如 `topcam`）。浏览器不能直接播放 RTSP，平台通过网关拉流转成
+  WebRTC 后播放，因此这一路仍需先用本工具或 MediaMTX 配置好对应路径。
+
+如果平台走 HTTPS，视频网关也必须通过 HTTPS 或同域反向代理暴露，否则浏览器会按
+混合内容拦截 `http://` 视频请求。
+
+前端默认网关可通过构建变量覆盖：
+
+```bash
+VITE_VIDEO_GATEWAY_URL=http://192.168.2.7:8889 npm run build
+```
+
 ## 说明
 
 - 每个 USB 摄像头一路 libx264 编码，会吃 CPU；IP 摄像头用 `-Copy` 几乎不耗 CPU。

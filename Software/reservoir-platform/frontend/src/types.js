@@ -94,7 +94,7 @@
 
 /**
  * 平台内的页面标识
- * @typedef {'home' | 'monitor' | 'inspection' | 'policy' | 'flood' | 'ecology'} NavigateTarget
+ * @typedef {'home' | 'monitor' | 'monitoring-center' | 'monitor-detail' | 'alarm-center' | 'camera-sources' | 'inspection' | 'policy' | 'flood' | 'ecology'} NavigateTarget
  */
 
 /**

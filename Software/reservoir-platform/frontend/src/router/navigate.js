@@ -1,7 +1,7 @@
 // 解析 Dify 回答中携带的跳转指令
 
 /** 平台支持的页面标识，与路由表一一对应 */
-const VALID_TARGETS = ['home', 'monitor', 'inspection', 'policy', 'flood', 'ecology']
+const VALID_TARGETS = ['home', 'monitor', 'monitoring-center', 'monitor-detail', 'alarm-center', 'camera-sources', 'inspection', 'policy', 'flood', 'ecology']
 
 /**
  * 中文页面名 → 页面标识，用于宽容匹配模型输出的自然语言
@@ -13,6 +13,19 @@ const ALIASES = {
   水库监测: 'monitor',
   监测总览: 'monitor',
   监测: 'monitor',
+  监控中心: 'monitoring-center',
+  监控总览: 'monitoring-center',
+  监控大屏: 'monitoring-center',
+  监控: 'monitoring-center',
+  实时监测: 'monitor-detail',
+  实时数据: 'monitor-detail',
+  告警中心: 'alarm-center',
+  告警记录: 'alarm-center',
+  报警: 'alarm-center',
+  告警: 'alarm-center',
+  画面来源: 'camera-sources',
+  视频配置: 'camera-sources',
+  摄像头配置: 'camera-sources',
   巡检: 'inspection',
   巡查: 'inspection',
   巡检台账: 'inspection',

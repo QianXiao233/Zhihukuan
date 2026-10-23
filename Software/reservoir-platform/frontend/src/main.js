@@ -8,6 +8,7 @@ import App from './App.vue'
 import router from './router/index.js'
 import { initPreferences } from './composables/usePreferences.js'
 import './index.css'
+import './mobile.css'
 
 // antd 中文语言包
 dayjs.locale('zh-cn')

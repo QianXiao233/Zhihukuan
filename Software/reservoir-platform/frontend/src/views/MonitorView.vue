@@ -57,6 +57,7 @@
               :alarm="twinAlarm"
               @status="onTwinStatus"
             />
+            <TwinLabels :project="projectTwinPoint" />
             <button v-if="mapFullscreen" type="button" class="twin-fullscreen-exit" @click="toggleMapFullscreen">退出全屏</button>
             <div class="map-compass"><span>N</span><b>↗</b></div>
               <div class="map-mini">{{ currentDamName }}<br><small>{{ twinStatus.failed ? '结构示意 · 非实测地图' : '三维沙盘 · 拖拽旋转' }}</small></div>
@@ -140,6 +141,7 @@ import {
 import { computed, nextTick, onMounted, ref } from 'vue'
 import ViewShell from './ViewShell.vue'
 import DamTwinScene from '../components/DamTwinScene.vue'
+import TwinLabels from '../components/TwinLabels.vue'
 import { useRouter } from 'vue-router'
 import { useReservoirMqtt } from '../composables/useReservoirMqtt.js'
 import { useCurrentDam } from '../composables/useCurrentDam.js'
@@ -183,6 +185,10 @@ const twinAlarm = computed(() => {
 
 function onTwinStatus(status) {
   twinStatus.value = status
+}
+
+function projectTwinPoint(point) {
+  return twinRef.value?.project(point)
 }
 
 /**
@@ -317,9 +323,31 @@ onMounted(() => { void loadOverviewData() })
 .rain-chart { display: flex; align-items: flex-end; justify-content: space-around; height: 116px; padding: 8px 5px 0; border-bottom: 1px solid #eaf0f5; background: repeating-linear-gradient(to bottom, transparent 0 31px, #edf3f7 32px); }.rain-column { position: relative; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 5px; }.rain-column span { color: #5d83a3; font-size: 8px; }.rain-column i { display: block; width: 13px; max-height: 94px; min-height: 8px; border-radius: 5px 5px 2px 2px; background: linear-gradient(180deg, #39b9f0, #287edc); }.rain-column small { color: #8ca0b2; font-size: 8px; white-space: nowrap; }.overview-empty { display:flex; align-items:center; justify-content:center; height:112px; color:#91a4b2; font-size:10px; text-align:center; }.archive-name { display:block; margin-top:2px; color:#234d6d; font-size:15px; }.archive-error { margin-top:5px; color:#bd5b52; font-size:9px; }.archive-meta { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; color:#66849a; font-size:9px; }.archive-meta span { padding:3px 7px; border-radius:8px; background:#f0f6fa; }.archive-location { overflow:hidden; margin-top:7px; color:#879cab; font-size:9px; text-overflow:ellipsis; white-space:nowrap; }.archive-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:12px; padding:10px 0; border-top:1px solid #edf2f5; border-bottom:1px solid #edf2f5; }.archive-stats small,.archive-stats b { display:block; }.archive-stats small { color:#94a6b3; font-size:8px; }.archive-stats b { overflow:hidden; margin-top:4px; color:#315d7d; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }.archive-stats i { color:#8a9ead; font-size:8px; font-style:normal; font-weight:400; }.archive-foot { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:9px; color:#91a1ad; font-size:9px; }.archive-foot span:last-child { padding:3px 7px; border-radius:7px; }.archive-foot .is-active { background:#e8faf3; color:#168b69; }.archive-foot .is-disabled { background:#f1f4f6; color:#8498a6; }
 
 
-@media (max-width: 1200px) { .overview-main-grid { grid-template-columns: minmax(0, 1.35fr) minmax(280px, .9fr); }.overview-bottom-grid { grid-template-columns: 1fr 1fr; }.archive-card { grid-column: 1 / span 2; } }
+@media (max-width: 1200px) { .overview-main-grid { grid-template-columns: minmax(0, 1.35fr) minmax(280px, .9fr); }.overview-bottom-grid { grid-template-columns: 1fr 1fr; }.archive-card { grid-column: 1 / span 2; }.gate-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 .twin-map.is-fullscreen{position:fixed;z-index:30;inset:70px 32px 28px 284px;height:auto;min-height:0;border:5px solid #fff;box-shadow:0 18px 50px rgba(5,30,53,.35)}.fresh-button{border:0;background:transparent;cursor:pointer}.overview-gate-toggle{display:inline-flex;align-items:center;gap:4px;margin-left:auto;padding:3px 5px 3px 4px;border:1px solid #dce8ef;border-radius:8px;background:#f5f9fb;color:#7d95a5;font-size:9px;cursor:pointer;transition:.18s ease}.overview-gate-toggle:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 8px rgba(38,102,142,.12)}.overview-gate-toggle:disabled{cursor:not-allowed;opacity:.45}.overview-gate-toggle__track{position:relative;width:27px;height:15px;border-radius:99px;background:#d7e3eb}.overview-gate-toggle__track i{position:absolute;top:2px;left:2px;width:11px;height:11px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(20,64,88,.22);transition:.18s ease}.overview-gate-toggle.is-open{border-color:#b7ead8;background:#effbf6;color:#168c6c}.overview-gate-toggle.is-open .overview-gate-toggle__track{background:#2abf92}.overview-gate-toggle.is-open .overview-gate-toggle__track i{transform:translateX(12px)}
+
+@media (max-width: 900px) {
+  .overview-page { min-width: 0; gap: 10px; }
+  .overview-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .overview-metric { min-height: 96px; padding: 12px; gap: 9px; }
+  .overview-metric__icon { flex-basis: 34px; width: 34px; height: 34px; font-size: 16px; }
+  .overview-metric__copy > strong { font-size: 20px; }
+  .overview-main-grid { grid-template-columns: 1fr; grid-template-rows: none; gap: 10px; }
+  .twin-card { grid-row: auto; }
+  .twin-map { height: 280px; min-height: 0; }
+  .twin-map.is-fullscreen { inset: 56px 8px 8px; border-width: 3px; }
+  .level-card, .gate-card { min-height: 0; }
+  .level-overview { min-height: 110px; gap: 12px; }
+  .level-gauge { flex-basis: 100px; width: 100px; height: 100px; }
+  .level-gauge strong { font-size: 18px; }
+  .gate-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .overview-bottom-grid { grid-template-columns: 1fr; gap: 10px; }
+  .archive-card { grid-column: auto; }
+  .quality-list { margin-top: 10px; }
+  .rain-chart { height: 100px; }
+  .rain-column i { max-height: 78px; }
+}
 </style>
 
 

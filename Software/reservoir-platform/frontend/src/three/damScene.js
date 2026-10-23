@@ -943,6 +943,22 @@ export function createDamScene({ container, onFrame, quality = 'auto', showCamer
     if (canvas.parentNode === host) host.removeChild(canvas)
   }
 
+  /**
+   * 把三维坐标投影到容器像素坐标，给 HTML 悬空标签用。
+   * visible=false 表示在相机背后或视锥外，标签应隐藏。
+   */
+  function projectPoint(point) {
+    const [x, y, z] = point
+    const vector = new THREE.Vector3(x, y, z).project(camera)
+    const width = renderer.domElement.clientWidth || host.clientWidth
+    const height = renderer.domElement.clientHeight || host.clientHeight
+    return {
+      x: (vector.x * 0.5 + 0.5) * width,
+      y: (-vector.y * 0.5 + 0.5) * height,
+      visible: vector.z > -1 && vector.z < 1,
+    }
+  }
+
   return {
     setData,
     focusPoint,
@@ -955,6 +971,7 @@ export function createDamScene({ container, onFrame, quality = 'auto', showCamer
     start,
     stop,
     dispose,
+    projectPoint,
     state,
     cameras,
     // 调试/美术调参用：直接读写水面 uniform 与网格

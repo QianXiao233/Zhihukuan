@@ -211,3 +211,43 @@
 .chat-input__file-input {
   display: none;
 }
+
+@media (max-width: 900px) {
+  .chat-input {
+    padding: 0 0 2px;
+  }
+
+  .chat-input__box {
+    gap: 6px;
+    padding: 8px 9px;
+    border-radius: 13px;
+  }
+
+  .chat-input__textarea {
+    min-height: 46px;
+    max-height: 96px;
+    padding: 7px 2px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .chat-input__tools {
+    gap: 6px;
+    padding-bottom: 1px;
+  }
+
+  .chat-input__icon-btn {
+    width: 34px;
+    height: 34px;
+    font-size: 15px;
+  }
+
+  .chat-input__count,
+  .chat-input__hint {
+    display: none;
+  }
+
+  .chat-input__preview-item {
+    max-width: 100%;
+  }
+}

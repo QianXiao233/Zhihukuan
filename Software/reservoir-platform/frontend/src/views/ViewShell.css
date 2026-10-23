@@ -102,23 +102,61 @@
 .platform-tag { padding: 6px 13px; border: 1px solid #d7e9f6; border-radius: 999px; background: #eef8fd; color: #3289b7; font-size: 11px; white-space: nowrap; }
 .platform-body { min-height: 0; flex: 1; overflow: auto; padding: 1px 2px 4px; }
 
+.platform-menu-button { display: none; flex: 0 0 auto; align-items: center; justify-content: center; width: 34px; height: 34px; margin-left: -4px; border: 0; border-radius: 9px; background: transparent; color: #315571; font-size: 18px; cursor: pointer; }
+.platform-menu-button:hover { background: #eef5fa; }
+.platform-nav-close { display: none; position: absolute; top: 16px; right: 12px; z-index: 2; align-items: center; justify-content: center; width: 30px; height: 30px; border: 1px solid rgba(140, 185, 215, .2); border-radius: 8px; background: rgba(255,255,255,.06); color: #b7d2e5; font-size: 14px; cursor: pointer; }
+.platform-nav-overlay { display: none; }
+
 @media (max-width: 1180px) {
   .platform-sidebar { width: 214px; flex-basis: 214px; }
   .platform-topbar, .platform-main { padding-left: 22px; padding-right: 22px; }
   .platform-time { display: none; }
 }
-@media (max-width: 860px) {
-  .platform-sidebar { width: 70px; flex-basis: 70px; padding: 18px 10px; }
-  .platform-brand { justify-content: center; padding: 0 0 22px; }
-  .platform-brand > div:last-child, .platform-selector__copy, .platform-selector__chevron, .platform-nav__label, .platform-nav__item span, .platform-nav__badge, .platform-sidebar__footer { display: none; }
-  .platform-selector { justify-content: center; padding: 10px; }
-  .platform-nav__item { justify-content: center; padding: 0; }
-  .platform-nav__icon { font-size: 19px; }
-  .platform-topbar { padding: 0 14px; }
-  .platform-main { padding: 18px 14px; }
+
+/* 手机 / 窄屏：侧栏改为抽屉，不再压缩成图标条 */
+@media (max-width: 900px) {
+  .platform-page { height: 100vh; height: 100dvh; }
+  .platform-sidebar {
+    position: fixed;
+    z-index: 70;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(84vw, 300px);
+    padding: max(22px, env(safe-area-inset-top)) 14px max(16px, env(safe-area-inset-bottom));
+    transform: translateX(-104%);
+    transition: transform .24s ease;
+    box-shadow: 12px 0 40px rgba(3, 18, 33, .35);
+    overscroll-behavior: contain;
+  }
+  .platform-sidebar.is-mobile-open { transform: translateX(0); }
+  .platform-nav-overlay { display: block; position: fixed; z-index: 65; inset: 0; background: rgba(3, 18, 33, .52); backdrop-filter: blur(2px); }
+  .platform-nav-close { display: flex; }
+  .platform-brand { padding-right: 38px; }
+  .platform-topbar { min-height: 56px; padding: 0 12px; gap: 8px; }
+  .platform-menu-button { display: inline-flex; }
+  .platform-breadcrumb { min-width: 0; gap: 6px; font-size: 12px; }
+  .platform-breadcrumb > span:first-child, .platform-breadcrumb__slash { display: none; }
+  .platform-breadcrumb strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .platform-topbar__right { gap: 10px; }
-  .platform-online, .platform-user { font-size: 0; }
-  .platform-heading h1 { font-size: 20px; }
+  .platform-online, .platform-time { display: none; }
+  .platform-user { font-size: 0; gap: 0; }
+  .platform-icon-button { font-size: 18px; padding: 6px; }
+  .platform-main { padding: 14px 14px max(18px, env(safe-area-inset-bottom)); }
+  .platform-heading { flex-direction: column; align-items: flex-start; gap: 8px; margin-bottom: 14px; }
+  .platform-heading__eyebrow { font-size: 10px; }
+  .platform-heading h1 { gap: 7px; font-size: 20px; }
+  .platform-heading h1 :deep(svg) { font-size: 18px; }
+  .platform-tag { max-width: 100%; padding: 5px 10px; font-size: 10px; line-height: 1.45; white-space: normal; }
+  .platform-body { padding: 0 0 4px; }
+}
+
+@media (max-width: 480px) {
+  .platform-main { padding-left: 10px; padding-right: 10px; }
+  .platform-topbar { padding: 0 10px; }
+  .platform-heading h1 { font-size: 18px; }
+  .platform-heading__eyebrow { font-size: 9px; }
+  .platform-user__avatar { width: 26px; height: 26px; }
 }
 
 /* 业务子页通用积木：巡检、防汛、生态、政策页沿用这些语义类，统一到新工作区视觉 */

@@ -28,7 +28,7 @@ public class ManagementAuditAdvice implements ResponseBodyAdvice<Object> {
         if (!req.getRequestURI().startsWith("/api/manage/") || !"POST".equals(req.getMethod()) || req.getAttribute("management.user") == null) return body;
         boolean success = body instanceof Map<?, ?> map && Boolean.TRUE.equals(map.get("success"));
         String target = "";
-        for (String key : new String[]{"device_id", "deviceId", "dam_id", "damId", "param_id", "paramId", "id"}) {
+        for (String key : new String[]{"device_id", "deviceId", "source_id", "sourceId", "dam_id", "damId", "param_id", "paramId", "id"}) {
             if (req.getParameter(key) != null) { target = req.getParameter(key); break; }
         }
         try {

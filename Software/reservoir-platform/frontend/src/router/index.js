@@ -32,10 +32,28 @@ export const routes = [
     meta: { title: '运营总览', icon: 'monitor', requiresAuth: true },
   },
   {
+    path: '/monitoring-center',
+    name: 'monitoring-center',
+    component: () => import('../views/MonitoringCenterView.vue'),
+    meta: { title: '监控中心', icon: 'monitor', requiresAuth: true },
+  },
+  {
     path: '/monitor/detail',
     name: 'monitor-detail',
     component: () => import('../views/RealtimeMonitorView.vue'),
     meta: { title: '实时监测', icon: 'monitor', requiresAuth: true },
+  },
+  {
+    path: '/alarms',
+    name: 'alarm-center',
+    component: () => import('../views/AlarmCenterView.vue'),
+    meta: { title: '告警中心', icon: 'alert', requiresAuth: true },
+  },
+  {
+    path: '/camera-sources',
+    name: 'camera-sources',
+    component: () => import('../views/CameraSourcesView.vue'),
+    meta: { title: '画面来源', icon: 'camera', requiresAuth: true },
   },
   {
     path: '/inspection',

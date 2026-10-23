@@ -109,6 +109,31 @@ PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 SET @ddl = IF(EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'water_log' AND column_name = 'orp'), 'SELECT 1', 'ALTER TABLE water_log ADD COLUMN orp FLOAT DEFAULT NULL');
 PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
+-- ── 监控画面来源（视频墙；RTSP 经网关转 WebRTC 播放） ─────────
+CREATE TABLE IF NOT EXISTS `camera_source` (
+  `source_id`   INT          NOT NULL AUTO_INCREMENT,
+  `source_name` VARCHAR(100) NOT NULL,
+  `location`    VARCHAR(255) DEFAULT NULL,
+  `protocol`    VARCHAR(20)  NOT NULL DEFAULT 'webrtc',
+  `source_url`  VARCHAR(1000) NOT NULL,
+  `play_url`    VARCHAR(1000) DEFAULT NULL,
+  `gateway_url` VARCHAR(500) DEFAULT NULL,
+  `stream_key`  VARCHAR(200) DEFAULT NULL,
+  `enabled`     TINYINT      NOT NULL DEFAULT 1,
+  `sort_order`  INT          NOT NULL DEFAULT 100,
+  `twin_label`  VARCHAR(32)  DEFAULT NULL,
+  `remark`      VARCHAR(500) DEFAULT NULL,
+  `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`source_id`),
+  UNIQUE KEY `uk_camera_twin_label` (`twin_label`),
+  KEY `idx_camera_enabled_sort` (`enabled`, `sort_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 老环境补 twin_label：数字孪生标签绑定哪一路画面
+SET @ddl = IF(EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'camera_source' AND column_name = 'twin_label'), 'SELECT 1', 'ALTER TABLE camera_source ADD COLUMN twin_label VARCHAR(32) DEFAULT NULL, ADD UNIQUE KEY uk_camera_twin_label (twin_label)');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
 -- ── 平台消息通知（跨重启持久化） ───────────────────────
 CREATE TABLE IF NOT EXISTS `message` (
   `id`          VARCHAR(64)  NOT NULL,

@@ -256,4 +256,20 @@ onBeforeUnmount(() => { if (statusTimer) window.clearInterval(statusTimer) })
 .alert-item > b { padding:3px 7px; border-radius:9px; background:#e8faf3; color:#168b69; font-size:9px; font-weight:500; }
 .alert-item > b.failed { background:#fff1ef; color:#b64c4a; }
 @media (max-width:900px) { .alert-list { grid-template-columns:1fr; }.alert-strip { flex-wrap:wrap; } }
+@media (max-width:900px) {
+  .monitor-page { min-width: 0; gap: 10px; }
+  .monitor-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .monitor-metric { padding: 12px; }
+  .monitor-metric strong { font-size: 22px; }
+  .monitor-grid { grid-template-columns: 1fr; gap: 10px; }
+  .monitor-card { padding: 13px; }
+  .monitor-card header { align-items: flex-start; }
+  .alert-strip { padding: 11px 12px; }
+  .alert-strip__chips { width: 100%; }
+  .monitor-card--wide { overflow-x: auto; }
+  .monitor-table { min-width: 560px; }
+  .device-list { grid-template-columns: 1fr; }
+  .device-item { grid-template-columns: 8px minmax(0, 1fr) auto; }
+  .device-item > span { display: none; }
+}
 </style>
