@@ -1,5 +1,6 @@
 package com.zhka.controller;
 
+import com.zhka.common.ClientIp;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.MethodParameter;
@@ -31,8 +32,8 @@ public class ManagementAuditAdvice implements ResponseBodyAdvice<Object> {
             if (req.getParameter(key) != null) { target = req.getParameter(key); break; }
         }
         try {
-            jdbc.update("INSERT INTO platform_audit(username, action, target_id, success) VALUES (?, ?, ?, ?)",
-                    req.getAttribute("management.user"), req.getRequestURI(), target, success);
+            jdbc.update("INSERT INTO platform_audit(username, action, target_id, success, ip) VALUES (?, ?, ?, ?, ?)",
+                    req.getAttribute("management.user"), req.getRequestURI(), target, success, ClientIp.resolve(req));
         } catch (Exception ex) { log.warn("管理审计写入失败，请检查数据库迁移: {}", ex.getClass().getSimpleName()); }
         return body;
     }

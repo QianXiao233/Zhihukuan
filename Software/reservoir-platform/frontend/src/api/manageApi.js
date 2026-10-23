@@ -106,6 +106,7 @@ export const resetPushCooldown = () => request('/api/manage/push/cooldown/reset'
 export const monitorStatus = () => request('/api/manage/monitor/status')
 
 export const listAudit = (page = 1, query = '') => request(`/api/manage/audit/list?${new URLSearchParams({ page, query })}`)
+export const listLoginLog = (page = 1, query = '') => request(`/api/manage/login-log/list?${new URLSearchParams({ page, query })}`)
 export const getRuntime = () => request('/api/manage/runtime')
 
 // ─────────── 服务间消息总线（消息存 MongoDB） ───────────

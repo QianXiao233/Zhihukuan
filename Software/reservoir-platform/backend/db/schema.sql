@@ -156,8 +156,28 @@ CREATE TABLE IF NOT EXISTS platform_audit (
   action VARCHAR(255) NOT NULL,
   target_id VARCHAR(100) DEFAULT NULL,
   success TINYINT NOT NULL DEFAULT 1,
+  ip VARCHAR(64) DEFAULT NULL,
   create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY idx_audit_time (create_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 已有环境升级：老版本 platform_audit 没有 ip 列，反向代理后排查来源需要它。
+SET @ddl = IF(EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'platform_audit' AND column_name = 'ip'), 'SELECT 1', 'ALTER TABLE platform_audit ADD COLUMN ip VARCHAR(64) DEFAULT NULL AFTER success');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- 登录日志：每次登录尝试都记录，成功与失败都在内，用于追踪来源 IP 与撞库。
+-- 与 platform_audit 分开：登录发生在鉴权之前，没有管理身份。
+CREATE TABLE IF NOT EXISTS login_log (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(255) NOT NULL,
+  ip VARCHAR(64) DEFAULT NULL,
+  success TINYINT NOT NULL DEFAULT 1,
+  reason VARCHAR(200) DEFAULT NULL,
+  user_agent VARCHAR(512) DEFAULT NULL,
+  create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_login_log_time (create_time),
+  KEY idx_login_log_user (username),
+  KEY idx_login_log_ip (ip)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ── 消息总线客户端（MySQL；消息本体在 MongoDB bus_messages） ──

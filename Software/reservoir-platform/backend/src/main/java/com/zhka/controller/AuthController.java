@@ -1,7 +1,9 @@
 package com.zhka.controller;
 
 import com.zhka.common.ApiResult;
+import com.zhka.common.ClientIp;
 import com.zhka.service.AuthService;
+import com.zhka.service.LoginLogService;
 import com.zhka.service.PushCooldownService;
 import com.zhka.service.PushConfigService;
 import com.zhka.service.PushService;
@@ -31,14 +33,17 @@ public class AuthController {
     private final PushConfigService pushConfig;
     private final PushCooldownService cooldown;
     private final AuthService authService;
+    private final LoginLogService loginLog;
 
     // 单构造器：Spring 自动注入，不需要 @Autowired
     public AuthController(PushService pushService, PushConfigService pushConfig,
-                          PushCooldownService cooldown, AuthService authService) {
+                          PushCooldownService cooldown, AuthService authService,
+                          LoginLogService loginLog) {
         this.pushService = pushService;
         this.pushConfig = pushConfig;
         this.cooldown = cooldown;
         this.authService = authService;
+        this.loginLog = loginLog;
     }
 
     @PostMapping("/login")
@@ -46,6 +51,10 @@ public class AuthController {
                                      @RequestParam("enpassword") String enpassword,
                                      HttpServletRequest request) {
         AuthService.LoginResult result = authService.login(username, enpassword);
+
+        // 登录日志：成功与失败都落库，失败原因只存结果消息，不记录口令本身
+        loginLog.record(username, ClientIp.resolve(request), result.success(),
+                result.success() ? null : result.message(), request.getHeader("User-Agent"));
 
         ApiResult body;
         if (result.success()) {
@@ -89,7 +98,7 @@ public class AuthController {
             Map<String, Object> payload = new HashMap<>();
             payload.put("username", username);
             payload.put("reason", reason);
-            payload.put("ip", getIpAddress(request));
+            payload.put("ip", ClientIp.resolve(request));
             payload.put("time", LocalDateTime.now()
                     .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
             pushService.pushAsync(token, PushTemplate.LOGIN_ANOMALY_ALERT, payload);
@@ -118,24 +127,5 @@ public class AuthController {
         return ApiResult.success("验证成功！")
                 .withUser(user.username(), user.level())
                 .toMap();
-    }
-
-    /**
-     * 获取客户端 IP。若前面配了 Nginx 等可信代理并转发 X-Forwarded-For，能拿到真实 IP；
-     * 否则退化为直连地址。注意：X-Forwarded-For 可被伪造，只在可信代理后面才可信任最左值。
-     */
-    private static String getIpAddress(HttpServletRequest request) {
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.isBlank() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("X-Real-IP");
-        }
-        if (ip == null || ip.isBlank() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getRemoteAddr();
-        }
-        // "client, proxy1, proxy2" → 取最左
-        if (ip != null && ip.contains(",")) {
-            ip = ip.split(",")[0].trim();
-        }
-        return ip == null ? "" : ip;
     }
 }

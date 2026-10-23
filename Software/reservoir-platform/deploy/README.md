@@ -187,6 +187,15 @@ curl -i -F "file=@./test.png" https://zhka.demo.ai.qianxiao.xin/api/files/upload
 - `/api/` 关掉了 `proxy_buffering`，否则 SSE 会被缓存；`proxy_read_timeout` 提到 3600s。
 - `client_max_body_size 40m` 与后端 multipart 上限对齐，否则上传直接 413。
 - `X-Forwarded-*` 三个头齐全，后端 `forward-headers-strategy: framework` 能还原真实来源 IP 和协议。
+  **但要注意 nginx 的继承规则**：`proxy_set_header` 只有在当前层级一条都没写时才继承上一级。
+  曾经在 `/api/`、`/auth/`、`/health` 里各写了一行 `proxy_set_header Connection ""`（为了 upstream
+  keepalive），结果把 server 级的 `Host`、`X-Real-IP`、`X-Forwarded-For`、`X-Forwarded-Proto`、
+  `X-Forwarded-Port` 全部顶掉，后端只能看到 `127.0.0.1`，`Host` 也变成 `reservoir_backend`。
+  现在 `Connection ""` 统一放在 server 级，location 内不再写任何 `proxy_set_header`；
+  只有 `/mqtt` 因为要改 `Connection: upgrade`，才把它需要的头完整重写了一遍。
+- 若 nginx 前面还有 CDN / 云 WAF，`$remote_addr` 拿到的是 CDN 节点地址而不是访客。此时需要启用
+  `real_ip` 模块（`set_real_ip_from <CDN 回源网段>; real_ip_header X-Forwarded-For; real_ip_recursive on;`），
+  否则 `X-Real-IP` 传给后端的仍是 CDN 的 IP。
 - 路由是 hash 模式（`createWebHashHistory`），刷新子页面不需要 rewrite；`location /` 的
   `try_files` 只是给将来改 history 模式留的兜底。
 
@@ -561,3 +570,42 @@ payload 字段：`title`、`content`、`level`（1 提示 / 2 警告 / 3 严重�
 
 > 浏览器订阅只允许 `ui.*`，服务间的 `alarm.*`、`device.*` 等主题不会被推到页面；
 > SSE 是广播，同一条通知每个页面都会收到，不会被其他消费者“领走”。
+
+## 12. 操作日志与登录日志
+
+两张表都记来源 IP，取值统一走 `com.zhka.common.ClientIp`：先看 `X-Forwarded-For`（取最左的
+客户端值），再退到 `X-Real-IP`，最后才是 `getRemoteAddr()`。因此这张表能不能记到真实 IP，
+完全取决于第 3 节 nginx 有没有把转发头传下来——如果日志里一直是 `127.0.0.1`，先按第 3 节
+检查 `proxy_set_header` 的继承问题。
+
+| 表 | 写入时机 | 主要字段 |
+| --- | --- | --- |
+| `platform_audit` | 任意 `POST /api/manage/**` 且已鉴权 | 操作人、接口、对象编号、结果、`ip` |
+| `login_log` | 每次 `/auth/login`，成功与失败都记 | 账号、`ip`、结果、失败原因、`user_agent` |
+
+登录日志单独一张表，因为登录发生在鉴权之前，没有管理身份；失败记录里的账号甚至可能根本不存在
+（撞库探测），这本身就是需要被看到的信息。两张表的写入失败都只打 warn，绝不影响主流程。
+
+### 12.1 升级已有环境
+
+```sql
+SOURCE backend/db/management-upgrade.sql;
+```
+
+脚本用 `information_schema` + `PREPARE` 判断后再执行，重复运行安全：
+
+- `platform_audit` 补 `ip` 列（老环境没有）；
+- `login_log` 用 `CREATE TABLE IF NOT EXISTS` 新建。
+
+### 12.2 页面与接口
+
+管理页「运行与审计」下有「操作日志」和「登录日志」两个页签，都按 20 条分页，
+前者可按操作人或接口搜索，后者可按账号或 IP 搜索。
+
+| 接口 | 说明 |
+| --- | --- |
+| `GET /api/manage/audit/list?page=&query=` | 操作日志，返回 `rows` / `total` |
+| `GET /api/manage/login-log/list?page=&query=` | 登录日志，查询串同时匹配 `username` 和 `ip` |
+
+两个接口都需要 `Authorization: Bearer <token>`，`currentUser` 校验失败时按平台惯例返回
+HTTP 200 + `success:false`。

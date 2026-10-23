@@ -24,7 +24,8 @@ public class ManagementConfig implements WebMvcConfigurer {
         if (path.startsWith("/api/manage/push")) return "GET".equals(method) ? 2 : 3;
         // 消息总线的客户端与密钥只给管理员
         if (path.startsWith("/api/manage/bus")) return 3;
-        if (path.startsWith("/api/manage/user") || path.startsWith("/api/manage/audit")) return 3;
+        if (path.startsWith("/api/manage/user") || path.startsWith("/api/manage/audit")
+                || path.startsWith("/api/manage/login-log")) return 3;
         if ("GET".equals(method)) return 1;
         if (path.startsWith("/api/manage/device") || path.startsWith("/api/manage/param")) return 2;
         return 3;
