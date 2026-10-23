@@ -4,22 +4,11 @@
       v-for="label in LABELS"
       :key="label.key"
       type="button"
-      class="twin-tag"
-      :class="[`is-${metaFor(label.key).tone}`, { 'is-active': activeLabel === label.key }]"
-      :style="labelStyle(label.key)"
-      :aria-label="`${label.name}：${metaFor(label.key).text}`"
-      @click="toggle(label.key)"
-    >
-      <span class="twin-tag__icon">
-        <VideoCameraOutlined v-if="label.key === 'drowning'" />
-        <RocketOutlined v-else />
-      </span>
-      <span class="twin-tag__text">
-        <strong>{{ label.name }}</strong>
-        <small>{{ metaFor(label.key).text }}</small>
-      </span>
-      <i class="twin-tag__lamp" :class="`is-${metaFor(label.key).tone}`" aria-hidden="true"></i>
-    </button>
+      class="twin-hit"
+      :style="hitStyle(label.key)"
+      :aria-label="`打开${label.name}`"
+      @click="open(label.key)"
+    ></button>
 
     <div v-if="activeLabel" class="twin-pop" :style="popupStyle">
       <header class="twin-pop__head">
@@ -64,7 +53,6 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  RocketOutlined,
   VideoCameraOutlined,
   WarningOutlined,
 } from '@ant-design/icons-vue'
@@ -73,6 +61,7 @@ import { getTwinAlerts, listCameraSources } from '../api/manageApi.js'
 
 const props = defineProps({
   project: { type: Function, required: true },
+  setLabelState: { type: Function, default: null },
 })
 
 const router = useRouter()
@@ -84,8 +73,8 @@ const alerts = ref({})
 const sources = ref([])
 
 const LABELS = [
-  { key: 'drowning', name: '溺水监测点', anchor: [-34, 2.2, 5] },
-  { key: 'boat', name: '无人艇', anchor: [-6, 2.2, -22] },
+  { key: 'drowning', name: '溺水监测点', anchor: [-34, 8.77, 5] },
+  { key: 'boat', name: '无人艇', anchor: [-6, 8.77, -22] },
 ]
 
 const canManage = computed(() => {
@@ -127,7 +116,7 @@ const activeMeta = computed(() => metaFor(activeLabel.value))
 
 const showDrowningAlert = computed(() => drowningMeta.value.tone === 'error' && !alertDismissed.value)
 
-function labelStyle(key) {
+function hitStyle(key) {
   const point = positions.value[key]
   if (!point?.visible) return { display: 'none' }
   return { left: `${point.x}px`, top: `${point.y}px` }
@@ -146,7 +135,7 @@ const popupStyle = computed(() => {
   return { left: `${left}px`, top: `${top}px` }
 })
 
-async function toggle(key) {
+async function open(key) {
   const next = activeLabel.value === key ? null : key
   if (next === 'drowning') {
     await loadSources()
@@ -174,9 +163,14 @@ function tick(now) {
 }
 
 let pollTimer = 0
-async function refreshAlerts() {  try {
+async function refreshAlerts() {
+  try {
     const result = await getTwinAlerts()
     alerts.value = result.data || {}
+    for (const label of LABELS) {
+      const meta = metaFor(label.key)
+      props.setLabelState?.(label.key, { name: label.name, status: meta.text, tone: meta.tone })
+    }
   } catch {
     // 状态接口失败时保留上一帧，不把灯打回未知
   }
@@ -251,6 +245,8 @@ onBeforeUnmount(() => {
   if (pollTimer) window.clearInterval(pollTimer)
   if (raf) cancelAnimationFrame(raf)
 })
+
+defineExpose({ open })
 </script>
 
 <style scoped>
@@ -259,6 +255,18 @@ onBeforeUnmount(() => {
   inset: 0;
   z-index: 3;
   pointer-events: none;
+}
+
+.twin-hit {
+  position: absolute;
+  width: 300px;
+  height: 120px;
+  border: 0;
+  background: transparent;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 .twin-tag {

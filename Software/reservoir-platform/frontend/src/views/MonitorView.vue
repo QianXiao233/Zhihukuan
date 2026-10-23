@@ -56,9 +56,10 @@
               :gates="twinGates"
               :alarm="twinAlarm"
               @status="onTwinStatus"
+              @label-click="onTwinLabelClick"
             />
             <TwinWeather />
-            <TwinLabels :project="projectTwinPoint" />
+            <TwinLabels ref="twinLabelsRef" :project="projectTwinPoint" :set-label-state="setTwinLabelState" />
             <button v-if="mapFullscreen" type="button" class="twin-fullscreen-exit" @click="toggleMapFullscreen">退出全屏</button>
             <div class="map-compass"><span>N</span><b>↗</b></div>
               <div class="map-mini">{{ currentDamName }}<br><small>{{ twinStatus.failed ? '结构示意 · 非实测地图' : '三维沙盘 · 拖拽旋转' }}</small></div>
@@ -152,6 +153,7 @@ import { dataSummary, listParams } from '../api/manageApi.js'
 const router = useRouter()
 const mapFullscreen = ref(false)
 const twinRef = ref(null)
+const twinLabelsRef = ref(null)
 const twinStatus = ref({ failed: false, modelLoaded: false })
 const { mqttConnected, realtime, gates, toggleGate } = useReservoirMqtt()
 const { currentDam, currentDamName, loadDams } = useCurrentDam()
@@ -191,6 +193,14 @@ function onTwinStatus(status) {
 
 function projectTwinPoint(point) {
   return twinRef.value?.project(point)
+}
+
+function setTwinLabelState(key, state) {
+  twinRef.value?.setLabelState(key, state)
+}
+
+function onTwinLabelClick(key) {
+  twinLabelsRef.value?.open(key)
 }
 
 /**

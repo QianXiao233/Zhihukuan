@@ -16,7 +16,7 @@ const props = defineProps({
   quality: { type: String, default: 'auto' },
 })
 
-const emit = defineEmits(['status'])
+const emit = defineEmits(['status', 'label-click'])
 
 const host = ref(null)
 const loading = ref(true)
@@ -43,7 +43,12 @@ function pushData() {
 async function init() {
   if (!host.value) return
   try {
-    scene = createDamScene({ container: host.value, quality: props.quality, showCameraPoints: false })
+    scene = createDamScene({
+      container: host.value,
+      quality: props.quality,
+      showCameraPoints: false,
+      onLabelClick: (key) => emit('label-click', key),
+    })
     pushData()
     scene.start()
 
@@ -84,6 +89,7 @@ defineExpose({
   resize: () => scene?.resize(),
   overview: () => scene?.overview(),
   project: (point) => scene?.projectPoint(point),
+  setLabelState: (key, state) => scene?.setLabelState(key, state),
 })
 </script>
 

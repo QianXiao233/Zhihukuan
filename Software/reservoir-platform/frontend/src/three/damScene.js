@@ -51,7 +51,7 @@ const FLY_DURATION = 1.15
 const TOUR_INTERVAL = 7.5
 const WATER_BASE_SIZE = 300
 
-export function createDamScene({ container, onFrame, quality = 'auto', showCameraPoints = true } = {}) {
+export function createDamScene({ container, onFrame, quality = 'auto', showCameraPoints = true, showLabels = true, onLabelClick = null } = {}) {
   const host = container
   if (!host) throw new Error('createDamScene: 需要 container')
 
@@ -369,6 +369,159 @@ export function createDamScene({ container, onFrame, quality = 'auto', showCamer
     }
   }
 
+  // ───────────────────────── 三维标签（Sprite） ─────────────────────────
+  const LABEL_ANCHORS = {
+    drowning: [-34, 1.6, 5],
+    boat: [-6, 1.6, -22],
+  }
+  const labelSprites = []
+  const labelRaycaster = new THREE.Raycaster()
+
+  function labelColor(tone) {
+    if (tone === 'normal') return '#2ee0a4'
+    if (tone === 'warning') return '#f2c14e'
+    if (tone === 'error') return '#ff5d55'
+    return '#8fa3b3'
+  }
+
+  function drawLabelIcon(ctx, key, cx, cy) {
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.fillStyle = '#7fe0ff'
+    if (key === 'drowning') {
+      ctx.beginPath()
+      ctx.moveTo(0, -32)
+      ctx.bezierCurveTo(22, -6, 25, 13, 0, 30)
+      ctx.bezierCurveTo(-25, 13, -22, -6, 0, -32)
+      ctx.fill()
+      ctx.fillStyle = 'rgba(4, 24, 35, .55)'
+      ctx.beginPath()
+      ctx.arc(0, 12, 7, 0, Math.PI * 2)
+      ctx.fill()
+    } else {
+      ctx.beginPath()
+      ctx.moveTo(-34, 12)
+      ctx.lineTo(34, 12)
+      ctx.lineTo(20, 30)
+      ctx.lineTo(-20, 30)
+      ctx.closePath()
+      ctx.fill()
+      ctx.fillRect(-15, -10, 30, 18)
+      ctx.fillStyle = 'rgba(4, 24, 35, .55)'
+      ctx.fillRect(-9, -5, 8, 8)
+      ctx.fillRect(2, -5, 8, 8)
+    }
+    ctx.restore()
+  }
+
+  function drawLabelTexture(name, status, tone) {
+    const canvas = document.createElement('canvas')
+    canvas.width = 1024
+    canvas.height = 360
+    const ctx = canvas.getContext('2d')
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+    ctx.beginPath()
+    ctx.roundRect(6, 6, 1012, 348, 42)
+    ctx.fillStyle = 'rgba(4, 24, 35, .86)'
+    ctx.fill()
+    ctx.lineWidth = 3
+    ctx.strokeStyle = 'rgba(126, 214, 244, .38)'
+    ctx.stroke()
+
+    ctx.beginPath()
+    ctx.arc(100, 180, 58, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(79, 209, 255, .16)'
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(79, 209, 255, .45)'
+    ctx.lineWidth = 2
+    ctx.stroke()
+    drawLabelIcon(ctx, name === '无人艇' ? 'boat' : 'drowning', 100, 180)
+
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = '#e9fbff'
+    ctx.font = '600 76px "Microsoft YaHei", "PingFang SC", sans-serif'
+    ctx.fillText(name, 190, 138)
+    ctx.fillStyle = '#9dbccb'
+    ctx.font = '400 42px "Microsoft YaHei", "PingFang SC", sans-serif'
+    ctx.fillText(status, 192, 224)
+
+    const color = labelColor(tone)
+    ctx.beginPath()
+    ctx.arc(940, 180, 19, 0, Math.PI * 2)
+    ctx.fillStyle = color
+    ctx.shadowColor = color
+    ctx.shadowBlur = 22
+    ctx.fill()
+    ctx.shadowBlur = 0
+
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.colorSpace = THREE.SRGBColorSpace
+    texture.minFilter = THREE.LinearFilter
+    texture.magFilter = THREE.LinearFilter
+    texture.anisotropy = 4
+    return texture
+  }
+
+  function addLabelSprite(key, name) {
+    const anchor = LABEL_ANCHORS[key]
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: drawLabelTexture(name, '未知', 'unknown'),
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+    }))
+    sprite.scale.set(26, 9.14, 1)
+    sprite.center.set(0.5, 0)
+    sprite.position.set(anchor[0], anchor[1] + 2.6, anchor[2])
+    sprite.renderOrder = 30
+    sprite.userData.key = key
+    scene.add(sprite)
+
+    const lineGeometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(anchor[0], anchor[1], anchor[2]),
+      new THREE.Vector3(anchor[0], anchor[1] + 2.6, anchor[2]),
+    ])
+    const line = new THREE.Line(lineGeometry, new THREE.LineBasicMaterial({
+      color: 0x4fd1ff,
+      transparent: true,
+      opacity: 0.45,
+    }))
+    scene.add(line)
+
+    const dot = new THREE.Mesh(
+      new THREE.SphereGeometry(0.38, 10, 10),
+      new THREE.MeshBasicMaterial({ color: 0x4fd1ff, transparent: true, opacity: 0.9 }),
+    )
+    dot.position.set(anchor[0], anchor[1], anchor[2])
+    scene.add(dot)
+
+    labelSprites.push({ key, name, sprite, line, dot, signature: '' })
+  }
+
+  function setLabelState(key, state) {
+    const item = labelSprites.find((entry) => entry.key === key)
+    if (!item) return
+    const name = state?.name || item.name
+    const status = state?.status || '未知'
+    const tone = state?.tone || 'unknown'
+    const signature = `${name}|${status}|${tone}`
+    if (item.signature === signature) return
+    item.signature = signature
+    const texture = drawLabelTexture(name, status, tone)
+    const previous = item.sprite.material.map
+    item.sprite.material.map = texture
+    item.sprite.material.needsUpdate = true
+    previous?.dispose()
+    item.dot.material.color.set(labelColor(tone))
+    item.line.material.color.set(labelColor(tone))
+  }
+
+  if (showLabels) {
+    addLabelSprite('drowning', '溺水监测点')
+    addLabelSprite('boat', '无人艇')
+  }
+
   // ───────────────────────── 相机控制 ─────────────────────────
   const overviewPose = poseFromLookAt(OVERVIEW_POSE.position, OVERVIEW_POSE.target)
   const pose = { ...overviewPose, target: [...overviewPose.target] }
@@ -400,6 +553,9 @@ export function createDamScene({ container, onFrame, quality = 'auto', showCamer
   let dragging = false
   let lastX = 0
   let lastY = 0
+  let startX = 0
+  let startY = 0
+  let moved = false
   let pointerId = null
 
   function onPointerDown(event) {
@@ -408,6 +564,9 @@ export function createDamScene({ container, onFrame, quality = 'auto', showCamer
     fly = null
     lastX = event.clientX
     lastY = event.clientY
+    startX = event.clientX
+    startY = event.clientY
+    moved = false
     pointerId = event.pointerId
     canvas.setPointerCapture?.(event.pointerId)
     canvas.style.cursor = 'grabbing'
@@ -419,15 +578,31 @@ export function createDamScene({ container, onFrame, quality = 'auto', showCamer
     const dy = event.clientY - lastY
     lastX = event.clientX
     lastY = event.clientY
+    if (Math.hypot(event.clientX - startX, event.clientY - startY) > 4) {
+      moved = true
+    }
     pose.azimuth -= dx * 0.0045
     pose.polar = clamp(pose.polar - dy * 0.004, 0.16, 1.46)
     goal = { ...pose, target: [...pose.target] }
   }
 
-  function onPointerUp() {
+  function onPointerUp(event) {
+    const shouldClick = !moved && event?.type === 'pointerup'
     dragging = false
     pointerId = null
     canvas.style.cursor = 'grab'
+    if (!shouldClick || labelSprites.length === 0 || typeof onLabelClick !== 'function') return
+    const rect = canvas.getBoundingClientRect()
+    if (!rect.width || !rect.height) return
+    const ndc = new THREE.Vector2(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1,
+    )
+    labelRaycaster.setFromCamera(ndc, camera)
+    const hits = labelRaycaster.intersectObjects(labelSprites.map((entry) => entry.sprite), false)
+    if (hits.length > 0) {
+      onLabelClick(hits[0].object.userData.key)
+    }
   }
 
   function onWheel(event) {
@@ -972,6 +1147,7 @@ export function createDamScene({ container, onFrame, quality = 'auto', showCamer
     stop,
     dispose,
     projectPoint,
+    setLabelState,
     state,
     cameras,
     // 调试/美术调参用：直接读写水面 uniform 与网格
