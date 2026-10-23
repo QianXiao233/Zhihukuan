@@ -121,16 +121,36 @@ public class WeatherService {
         Map<String, Object> temperature = map(current.get("temperature"));
         Map<String, Object> wind = map(current.get("wind"));
         Map<String, Object> direction = map(wind.get("direction"));
+        Map<String, Object> feelsLike = map(current.get("feelsLike"));
+        Map<String, Object> pressure = map(current.get("pressure"));
+        Map<String, Object> visibility = map(current.get("visibility"));
+        Map<String, Object> precipitation = map(current.get("precipitation"));
+        Map<String, Object> precipitationAmount = map(precipitation.get("amount"));
+        Map<String, Object> windSpeed = map(wind.get("speed"));
+        Map<String, Object> windGust = map(current.get("windGust"));
 
         Double temp = number(temperature.get("value"));
         Double tempMax = null;
         Double tempMin = null;
+        Double precipProbability = null;
         String dailyText = "";
+        String dayText = "";
+        String nightText = "";
+        String sunrise = "";
+        String sunset = "";
         if (daily != null && daily.get("days") instanceof List<?> days && !days.isEmpty()) {
             Map<String, Object> day = map(days.get(0));
             tempMax = number(map(day.get("temperatureMax")).get("value"));
             tempMin = number(map(day.get("temperatureMin")).get("value"));
-            dailyText = text(map(map(day.get("daytime")).get("condition")).get("text"));
+            Map<String, Object> daytime = map(day.get("daytime"));
+            Map<String, Object> nighttime = map(day.get("nighttime"));
+            Map<String, Object> astro = map(day.get("astro"));
+            dailyText = text(map(daytime.get("condition")).get("text"));
+            dayText = dailyText;
+            nightText = text(map(nighttime.get("condition")).get("text"));
+            sunrise = text(astro.get("sunrise"));
+            sunset = text(astro.get("sunset"));
+            precipProbability = number(map(daytime.get("precipitation")).get("probability"));
         }
 
         String text = text(condition.get("text"));
@@ -149,7 +169,21 @@ public class WeatherService {
         data.put("tempMin", round(tempMin, 0));
         data.put("windDir", windName(text(direction.get("compass"))));
         data.put("windScale", round(number(wind.get("scale")), 0));
+        data.put("windSpeed", round(number(windSpeed.get("value")), 1));
+        data.put("windGust", round(number(windGust.get("value")), 1));
         data.put("humidity", round(number(current.get("humidity")) == null ? null : number(current.get("humidity")) * 100, 0));
+        data.put("feelsLike", round(number(feelsLike.get("value")), 1));
+        data.put("pressure", round(number(pressure.get("value")), 0));
+        data.put("visibilityKm", round(number(visibility.get("value")) == null ? null : number(visibility.get("value")) / 1000, 1));
+        data.put("precipitation", round(number(precipitationAmount.get("value")), 1));
+        data.put("precipitationType", text(precipitation.get("type")));
+        data.put("precipProbability", round(precipProbability == null ? null : precipProbability * 100, 0));
+        data.put("uvIndex", round(number(current.get("uvIndex")), 0));
+        data.put("cloudCover", round(number(current.get("cloudCover")) == null ? null : number(current.get("cloudCover")) * 100, 0));
+        data.put("sunrise", sunrise);
+        data.put("sunset", sunset);
+        data.put("dayText", dayText);
+        data.put("nightText", nightText);
         data.put("observedAt", LocalDateTime.now(ZoneOffset.ofHours(8)).format(TIME_FORMAT));
         data.put("stale", false);
         return data;
