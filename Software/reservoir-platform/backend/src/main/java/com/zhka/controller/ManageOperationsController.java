@@ -37,10 +37,15 @@ public class ManageOperationsController extends AbstractManageController {
      */
     private List<Map<String, Object>> auditRows(String pattern, int offset) {
         try {
-            return jdbc.queryForList("SELECT id, username, action, target_id AS targetId, success, ip, create_time AS createTime FROM platform_audit WHERE username LIKE ? OR action LIKE ? ORDER BY id DESC LIMIT 20 OFFSET ?", pattern, pattern, offset);
+            return jdbc.queryForList("SELECT id, username, action, target_id AS targetId, success, ip, region, create_time AS createTime FROM platform_audit WHERE username LIKE ? OR action LIKE ? ORDER BY id DESC LIMIT 20 OFFSET ?", pattern, pattern, offset);
         } catch (DataAccessException ex) {
-            log.warn("platform_audit 缺少 ip 列，已退回旧查询；请在服务器执行 db/management-upgrade.sql");
-            return jdbc.queryForList("SELECT id, username, action, target_id AS targetId, success, create_time AS createTime FROM platform_audit WHERE username LIKE ? OR action LIKE ? ORDER BY id DESC LIMIT 20 OFFSET ?", pattern, pattern, offset);
+            log.warn("platform_audit 缺少 region 列，已退回不含地区的查询；请执行 db/management-upgrade.sql");
+            try {
+                return jdbc.queryForList("SELECT id, username, action, target_id AS targetId, success, ip, create_time AS createTime FROM platform_audit WHERE username LIKE ? OR action LIKE ? ORDER BY id DESC LIMIT 20 OFFSET ?", pattern, pattern, offset);
+            } catch (DataAccessException ex2) {
+                log.warn("platform_audit 缺少 ip 列，已退回旧查询；请在服务器执行 db/management-upgrade.sql");
+                return jdbc.queryForList("SELECT id, username, action, target_id AS targetId, success, create_time AS createTime FROM platform_audit WHERE username LIKE ? OR action LIKE ? ORDER BY id DESC LIMIT 20 OFFSET ?", pattern, pattern, offset);
+            }
         }
     }
 
@@ -57,13 +62,19 @@ public class ManageOperationsController extends AbstractManageController {
         int offset = (Math.max(1, Math.min(page, 100000)) - 1) * 20;
         String pattern = "%" + query + "%";
         try {
-            var rows = jdbc.queryForList("SELECT id, username, ip, success, reason, user_agent AS userAgent, create_time AS createTime FROM login_log WHERE username LIKE ? OR ip LIKE ? ORDER BY id DESC LIMIT 20 OFFSET ?", pattern, pattern, offset);
-            long total = jdbc.queryForObject("SELECT COUNT(*) FROM login_log WHERE username LIKE ? OR ip LIKE ?", Long.class, pattern, pattern);
+            var rows = jdbc.queryForList("SELECT id, username, ip, region, success, reason, user_agent AS userAgent, create_time AS createTime FROM login_log WHERE username LIKE ? OR ip LIKE ? OR region LIKE ? ORDER BY id DESC LIMIT 20 OFFSET ?", pattern, pattern, pattern, offset);
+            long total = jdbc.queryForObject("SELECT COUNT(*) FROM login_log WHERE username LIKE ? OR ip LIKE ? OR region LIKE ?", Long.class, pattern, pattern, pattern);
             return okWithData(user, Map.of("rows", rows, "total", total));
         } catch (DataAccessException ex) {
-            // 表还没建：给出可执行的提示，而不是 500
-            log.warn("login_log 表不存在；请在服务器执行 db/management-upgrade.sql");
-            return fail(user, "登录日志表尚未创建，请先在服务器执行 backend/db/management-upgrade.sql");
+            // 兼容还没补 region 列的环境；表完全不存在时再给出迁移提示
+            try {
+                var rows = jdbc.queryForList("SELECT id, username, ip, success, reason, user_agent AS userAgent, create_time AS createTime FROM login_log WHERE username LIKE ? OR ip LIKE ? ORDER BY id DESC LIMIT 20 OFFSET ?", pattern, pattern, offset);
+                long total = jdbc.queryForObject("SELECT COUNT(*) FROM login_log WHERE username LIKE ? OR ip LIKE ?", Long.class, pattern, pattern);
+                return okWithData(user, Map.of("rows", rows, "total", total));
+            } catch (DataAccessException ex2) {
+                log.warn("login_log 表不存在；请在服务器执行 db/management-upgrade.sql");
+                return fail(user, "登录日志表尚未创建，请先在服务器执行 backend/db/management-upgrade.sql");
+            }
         }
     }
     @GetMapping("/runtime")

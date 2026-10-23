@@ -22,12 +22,15 @@ public class LoginLogService {
     private static final int MAX_USERNAME = 255;
     private static final int MAX_IP = 64;
     private static final int MAX_REASON = 200;
+    private static final int MAX_REGION = 100;
     private static final int MAX_USER_AGENT = 512;
 
     private final JdbcTemplate jdbc;
+    private final IpRegionService ipRegion;
 
-    public LoginLogService(JdbcTemplate jdbc) {
+    public LoginLogService(JdbcTemplate jdbc, IpRegionService ipRegion) {
         this.jdbc = jdbc;
+        this.ipRegion = ipRegion;
     }
 
     /**
@@ -42,9 +45,10 @@ public class LoginLogService {
     public void record(String username, String ip, boolean success, String reason, String userAgent) {
         try {
             jdbc.update(
-                    "INSERT INTO login_log(username, ip, success, reason, user_agent) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO login_log(username, ip, region, success, reason, user_agent) VALUES (?, ?, ?, ?, ?, ?)",
                     truncate(username, MAX_USERNAME),
                     truncate(ip, MAX_IP),
+                    truncate(ipRegion.resolve(ip), MAX_REGION),
                     success,
                     truncate(reason, MAX_REASON),
                     truncate(userAgent, MAX_USER_AGENT));

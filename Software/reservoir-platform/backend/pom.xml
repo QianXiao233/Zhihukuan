@@ -75,6 +75,12 @@
       <artifactId>mysql-connector-j</artifactId>
       <scope>runtime</scope>
     </dependency>
+    <!-- 离线 IP 归属地：登录/审计日志显示来源省市，不依赖外部接口 -->
+    <dependency>
+      <groupId>org.lionsoul</groupId>
+      <artifactId>ip2region</artifactId>
+      <version>2.7.0</version>
+    </dependency>
     <!-- 水情时序数据：MongoDB（文档模型更适合传感器读数这类写多读少、字段可变的记录） -->
     <dependency>
       <groupId>org.springframework.boot</groupId>

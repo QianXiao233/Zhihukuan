@@ -1,6 +1,7 @@
 package com.zhka.controller;
 
 import com.zhka.common.ClientIp;
+import com.zhka.service.IpRegionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.MethodParameter;
@@ -19,7 +20,8 @@ import java.util.Map;
 public class ManagementAuditAdvice implements ResponseBodyAdvice<Object> {
     private static final Logger log = LoggerFactory.getLogger(ManagementAuditAdvice.class);
     private final JdbcTemplate jdbc;
-    public ManagementAuditAdvice(JdbcTemplate jdbc) { this.jdbc = jdbc; }
+    private final IpRegionService ipRegion;
+    public ManagementAuditAdvice(JdbcTemplate jdbc, IpRegionService ipRegion) { this.jdbc = jdbc; this.ipRegion = ipRegion; }
     @Override public boolean supports(MethodParameter method, Class<? extends HttpMessageConverter<?>> converter) { return true; }
     @Override public Object beforeBodyWrite(Object body, MethodParameter method, MediaType type,
             Class<? extends HttpMessageConverter<?>> converter, ServerHttpRequest request, ServerHttpResponse response) {
@@ -32,8 +34,9 @@ public class ManagementAuditAdvice implements ResponseBodyAdvice<Object> {
             if (req.getParameter(key) != null) { target = req.getParameter(key); break; }
         }
         try {
-            jdbc.update("INSERT INTO platform_audit(username, action, target_id, success, ip) VALUES (?, ?, ?, ?, ?)",
-                    req.getAttribute("management.user"), req.getRequestURI(), target, success, ClientIp.resolve(req));
+            String ip = ClientIp.resolve(req);
+            jdbc.update("INSERT INTO platform_audit(username, action, target_id, success, ip, region) VALUES (?, ?, ?, ?, ?, ?)",
+                    req.getAttribute("management.user"), req.getRequestURI(), target, success, ip, ipRegion.resolve(ip));
         } catch (Exception ex) { log.warn("管理审计写入失败，请检查数据库迁移: {}", ex.getClass().getSimpleName()); }
         return body;
     }
