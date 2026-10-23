@@ -33,6 +33,7 @@ export const deleteDevice = (deviceId) => request('/api/manage/device/delete', {
 
 export const listCameraSources = () => request('/api/manage/camera/list')
 export const getTwinAlerts = () => request('/api/twin/alerts')
+export const getWeather = () => request('/api/weather/now')
 export const addCameraSource = (values) => request('/api/manage/camera/add', { method: 'POST', body: formBody(values) })
 export const updateCameraSource = (values) => request('/api/manage/camera/update', { method: 'POST', body: formBody(values) })
 export const deleteCameraSource = (sourceId) => request('/api/manage/camera/delete', { method: 'POST', body: formBody({ sourceId }, false) })

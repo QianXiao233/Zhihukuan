@@ -57,6 +57,7 @@
               :alarm="twinAlarm"
               @status="onTwinStatus"
             />
+            <TwinWeather />
             <TwinLabels :project="projectTwinPoint" />
             <button v-if="mapFullscreen" type="button" class="twin-fullscreen-exit" @click="toggleMapFullscreen">退出全屏</button>
             <div class="map-compass"><span>N</span><b>↗</b></div>
@@ -142,6 +143,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import ViewShell from './ViewShell.vue'
 import DamTwinScene from '../components/DamTwinScene.vue'
 import TwinLabels from '../components/TwinLabels.vue'
+import TwinWeather from '../components/TwinWeather.vue'
 import { useRouter } from 'vue-router'
 import { useReservoirMqtt } from '../composables/useReservoirMqtt.js'
 import { useCurrentDam } from '../composables/useCurrentDam.js'
