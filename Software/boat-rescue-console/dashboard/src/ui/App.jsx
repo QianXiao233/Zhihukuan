@@ -6,10 +6,83 @@ import adapterPackage from 'webrtc-adapter';
 // The Janus browser bundle expects the adapter shim as a global dependency.
 globalThis.adapter = adapterPackage?.default ?? adapterPackage;
 
-const API = 'http://localhost:4174';
-const JANUS = 'http://192.168.2.14:8088/janus';
+// ---------------------------------------------------------------------------
+// 桥接服务地址（serial-service，默认本机 4174 端口）。
+//
+// 驾驶台现在作为水库平台的 /console/ 子应用被 iframe 嵌入，桥接板可能不在
+// 平台所在的机器上，因此地址支持通过 URL query 覆盖：
+//
+//   /console/index.html?api=http://192.168.2.14:4174
+//
+// 规则：
+//   * 只接受 http / https 的绝对地址，其余（空值、ftp:、javascript:、乱写）一律回退默认；
+//   * WebSocket 地址由 http→ws、https→wss 推导，路径与 HTTP 基地址保持一致；
+//   * 默认仍指向本机，单独打开 index.html 时行为不变。
+// ---------------------------------------------------------------------------
+const DEFAULT_API_HTTP = 'http://127.0.0.1:4174';
+
+const deriveWsUrl = (httpUrl) => {
+  const url = new URL(httpUrl);
+  const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${url.host}${url.pathname}`.replace(/\/+$/, '');
+};
+
+const resolveBoatEndpoints = () => {
+  const fallback = { api: DEFAULT_API_HTTP, ws: deriveWsUrl(DEFAULT_API_HTTP) };
+  try {
+    const raw = new URLSearchParams(window.location.search).get('api');
+    if (!raw) return fallback;
+    const candidate = new URL(raw.trim());
+    if (candidate.protocol !== 'http:' && candidate.protocol !== 'https:') return fallback;
+    // 只保留 origin + path（去掉 query/hash 和结尾斜杠），避免拼出 `//api/ports`
+    const api = `${candidate.origin}${candidate.pathname}`.replace(/\/+$/, '');
+    return { api, ws: deriveWsUrl(api) };
+  } catch {
+    return fallback;
+  }
+};
+
+const { api: API, ws: WS_URL } = resolveBoatEndpoints();
+
+/**
+ * Janus 视频网关地址同样可配置。
+ *
+ * 为什么必须可配：默认是船载 WiFi 模块的局域网地址（http://192.168.2.14:8088/janus）。
+ * 平台以 HTTPS 部署时，浏览器会把 http:// 的视频信令当成混合内容直接拦掉——所以
+ * 需要能传一个 https/wss 的反代地址（janus-gateway 会自动按 https 走 wss）。
+ * 用法：/console/index.html?janus=https://boat.example.com/janus
+ */
+const DEFAULT_JANUS = 'http://192.168.2.14:8088/janus';
+
+const resolveJanusUrl = () => {
+  try {
+    const raw = new URLSearchParams(window.location.search).get('janus');
+    if (!raw) return DEFAULT_JANUS;
+    const candidate = new URL(raw.trim());
+    if (candidate.protocol !== 'http:' && candidate.protocol !== 'https:') return DEFAULT_JANUS;
+    return `${candidate.origin}${candidate.pathname}`.replace(/\/+$/, '');
+  } catch {
+    return DEFAULT_JANUS;
+  }
+};
+
+const JANUS = resolveJanusUrl();
+
+// 便于在浏览器控制台核对本次实际生效的桥接/视频地址（排查"连不上"时不用猜）
+if (typeof window !== 'undefined') {
+  window.__BOAT_CONSOLE_ENDPOINTS__ = { api: API, ws: WS_URL, janus: JANUS };
+}
+
 const STREAM_ID = 99;
 const keys = { w: 'forward', a: 'left', s: 'reverse', d: 'right' };
+
+// 与 serial-service / protocol.js 保持一致的量程
+const POOL_SIZE_M = 1.2;
+const HEADING_MAX = 359.9;        // 服务端要求 heading < 360，这里留一位小数
+// 船端 20Hz 上报；超过这个时间没收到就认为遥测断了（桥接板/串口/船端任一环）
+const TELEMETRY_TIMEOUT_MS = 1500;
+// "已下发"只是"帧发出去了"，不是船端确认；6 秒后复位按钮，避免一直挂着假状态
+const RELEASE_STATUS_MS = 6000;
 
 export function App() {
   const [ports, setPorts] = useState([]);
@@ -28,6 +101,10 @@ export function App() {
   // 投放释放：两段式确认，避免误触（投放不可逆）
   const [releaseConfirm, setReleaseConfirm] = useState(false);
   const [releaseSentAt, setReleaseSentAt] = useState(null);
+  // 视觉通道：谁在控制船，操作员必须看得见（否则"已锁定"可能是个假象）
+  const [vision, setVision] = useState({ gate: true, active: false, ageMs: null });
+  // 遥测是否超时（船端只在上报链路正常时才发状态，断了网页必须自己发现）
+  const [telemetryStale, setTelemetryStale] = useState(false);
   const wsRef = useRef(null);
   const janusRef = useRef(null);
   const streamRef = useRef(null);
@@ -36,9 +113,25 @@ export function App() {
   const pressedRef = useRef({});
   const armedRef = useRef(false);
   const connectedRef = useRef(false);
+  const telemetryTimerRef = useRef(null);
+  const releaseTimerRef = useRef(null);
 
   useEffect(() => { armedRef.current = armed; }, [armed]);
   useEffect(() => { connectedRef.current = connected; }, [connected]);
+  useEffect(() => () => {
+    window.clearTimeout(telemetryTimerRef.current);
+    window.clearTimeout(releaseTimerRef.current);
+  }, []);
+
+  /** 每收到一帧遥测就重置看门狗；超时后由下面的 effect 自动锁定动力。 */
+  const markTelemetry = useCallback(() => {
+    setTelemetryStale(false);
+    window.clearTimeout(telemetryTimerRef.current);
+    telemetryTimerRef.current = window.setTimeout(
+      () => setTelemetryStale(true),
+      TELEMETRY_TIMEOUT_MS,
+    );
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -57,25 +150,61 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const ws = new WebSocket('ws://localhost:4174');
-    wsRef.current = ws;
-    ws.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      if (message.type === 'connection') {
-        setConnected(Boolean(message.connected));
-        if (!message.connected) setArmed(false);
-        if (message.telemetry) setTelemetry(message.telemetry);
-      }
-      if (message.type === 'telemetry') setTelemetry(message.telemetry);
-      if (message.type === 'release') {
-        setReleaseSentAt(message.at ?? Date.now());
-        setReleaseConfirm(false);
-      }
-      if (message.type === 'error') setError(message.message);
+    let disposed = false;
+    let retryTimer = null;
+    let ws = null;
+
+    const connect = () => {
+      ws = new WebSocket(WS_URL);
+      wsRef.current = ws;
+      ws.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+        if (message.type === 'connection') {
+          setConnected(Boolean(message.connected));
+          if (!message.connected) {
+            setArmed(false);
+            // 断开时清掉看门狗，避免"离线 + 遥测超时"两条提示同时挂
+            window.clearTimeout(telemetryTimerRef.current);
+            setTelemetryStale(false);
+          } else {
+            // 串口一连上就开始看门狗：即使一帧遥测都没来，1.5 s 后也要报超时
+            markTelemetry();
+          }
+          if (message.telemetry) setTelemetry(message.telemetry);
+          if (message.vision) setVision(message.vision);
+        }
+        if (message.type === 'telemetry') {
+          setTelemetry(message.telemetry);
+          markTelemetry();
+        }
+        if (message.type === 'vision') setVision(message);
+        if (message.type === 'release') {
+          setReleaseSentAt(message.at ?? Date.now());
+          setReleaseConfirm(false);
+          // 释放没有回执，界面不能一直显示"已下发"
+          window.clearTimeout(releaseTimerRef.current);
+          releaseTimerRef.current = window.setTimeout(() => setReleaseSentAt(null), RELEASE_STATUS_MS);
+        }
+        if (message.type === 'error') setError(message.message);
+      };
+      ws.onclose = () => {
+        setConnected(false);
+        setArmed(false);
+        setVision((current) => ({ ...current, active: false }));
+        window.clearTimeout(telemetryTimerRef.current);
+        setTelemetryStale(false);
+        // 断线自动重连：原来断开后只能刷新页面，操作员容易误以为船还在线
+        if (!disposed) retryTimer = window.setTimeout(connect, 1500);
+      };
     };
-    ws.onclose = () => { setConnected(false); setArmed(false); };
-    return () => ws.close();
-  }, []);
+
+    connect();
+    return () => {
+      disposed = true;
+      window.clearTimeout(retryTimer);
+      ws?.close();
+    };
+  }, [markTelemetry]);
 
   /**
    * 投放释放（不可逆动作）。
@@ -100,27 +229,75 @@ export function App() {
     }
   };
 
-  const stopDrive = useCallback(() => {
+  /**
+   * 停止 / 锁定动力。
+   *
+   * lockVision=true 用于**明确的急停动作**（空格、ESC、红色急停、锁定动力、
+   * 停止自主导航）：除了把网页通道归零，还会关闭服务端的"视觉接管闸门"。
+   * 否则视觉程序在跑时，网页发出的 armed:false 会被服务端用强制 armed:true
+   * 的视觉帧覆盖——红色急停按下去船还在跑。
+   *
+   * 失焦 / 切模式只归零网页通道，不动闸门：避免操作员切个窗口就把正在执行的
+   * 视觉救援打断（要中断请用急停）。
+   */
+  const stopDrive = useCallback((lockVision = false) => {
     pressedRef.current = {};
     setPressed({});
     setArmed(false);
     armedRef.current = false;
-    if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify({ type: 'command', armed: false, throttle: 0, steer: 0 }));
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'command', armed: false, throttle: 0, steer: 0 }));
+      if (lockVision) {
+        wsRef.current.send(JSON.stringify({ type: 'visionGate', allow: false }));
+        setVision((current) => ({ ...current, gate: false, active: false }));
+      }
+    }
   }, []);
+
+  /** 重新允许视觉程序接管（急停之后必须由人显式恢复）。 */
+  const allowVision = useCallback(() => {
+    setError('');
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'visionGate', allow: true }));
+      setVision((current) => ({ ...current, gate: true }));
+    }
+  }, []);
+
+  // 遥测超时 = 船端/桥接板/串口至少有一环断了：立刻锁定动力并醒目提示。
+  // （船端的 emergency 标志只在通信中断时置位，而那时它本身就不上报，所以
+  //   网页不能依赖 emergency 字段，必须有本地的遥测看门狗。）
+  useEffect(() => {
+    if (!telemetryStale) return;
+    setError('遥测超时：超过 1.5 秒未收到船端数据，已自动锁定网页动力');
+    if (armedRef.current) {
+      armedRef.current = false;
+      setArmed(false);
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'command', armed: false, throttle: 0, steer: 0 }));
+      }
+    }
+  }, [telemetryStale]);
 
   useEffect(() => {
     const send = () => {
       const current = pressedRef.current;
       const throttle = (current.forward ? 1 : 0) - (current.reverse ? 1 : 0);
-      const steer = (current.left ? 1 : 0) - (current.right ? 1 : 0);
+      // 符号约定与固件/视觉一致：**正 steer = 右转**。
+      // 固件 handle_manual 是 left = throttle + steer，左轮加速 -> 船头右偏，
+      // 视觉伺服也用同一套约定（目标偏右 -> correction>0 -> 左轮加速）。
+      // 原来这里写成 left-right，按 A 会右转，和界面/视觉的方向语义相反。
+      const steer = (current.right ? 1 : 0) - (current.left ? 1 : 0);
       if (wsRef.current?.readyState !== WebSocket.OPEN) return;
 
       // 全部留空 -> 发 null，让船端进入"纯二哈视觉搜救"。
       // 注意不能用 Number('') —— 那会得到 0，船端会误判为有效坐标。
       const empty = Object.values(navigation).every((value) => value === '');
-      const validNavigation = !empty && Object.entries(navigation).every(
+      // 全 0 是"没有定位"的约定值：船端会按无效处理、切到二哈搜救。
+      // 网页若还宣称"坐标导航"就会误导操作员，所以这里同样判为无效。
+      const allZero = !empty && Object.values(navigation).every((value) => Number(value) === 0);
+      const validNavigation = !empty && !allZero && Object.entries(navigation).every(
         ([key, value]) => value !== '' && Number.isFinite(Number(value)) && Number(value) >= 0 &&
-                          Number(value) <= (key === 'heading' ? 359.999 : 1.2)
+                          Number(value) <= (key === 'heading' ? HEADING_MAX : POOL_SIZE_M)
       );
 
       wsRef.current.send(JSON.stringify({
@@ -141,10 +318,16 @@ export function App() {
   }, [controlMode, navigation, power]);
 
   useEffect(() => {
+    const isTyping = () => ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName);
     const down = (event) => {
       const key = event.key.toLowerCase();
-      if (key === ' ' || key === 'escape') { event.preventDefault(); stopDrive(); return; }
-      if (!(key in keys) || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+      // ESC 始终急停；空格只在非输入状态下急停（否则在坐标框里按空格会误触发）。
+      if (key === 'escape' || (key === ' ' && !isTyping())) {
+        event.preventDefault();
+        stopDrive(true);          // 明确急停：连视觉接管一起切断
+        return;
+      }
+      if (!(key in keys) || isTyping()) return;
       event.preventDefault();
       if (controlMode !== 'manual' || !connectedRef.current || !armedRef.current) return;
       const next = { ...pressedRef.current, [keys[key]]: true };
@@ -158,13 +341,14 @@ export function App() {
       pressedRef.current = next;
       setPressed(next);
     };
+    const onBlur = () => stopDrive();   // 失焦只停网页通道，不切断视觉救援
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
-    window.addEventListener('blur', stopDrive);
+    window.addEventListener('blur', onBlur);
     return () => {
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
-      window.removeEventListener('blur', stopDrive);
+      window.removeEventListener('blur', onBlur);
       stopDrive();
     };
   }, [controlMode, stopDrive]);
@@ -205,15 +389,22 @@ export function App() {
     (value) => value !== '' && Number.isFinite(Number(value)) && Number(value) >= 0
   );
   const autonomousFieldsInRange = Object.entries(navigation).every(
-    ([key, value]) => Number(value) <= (key === 'heading' ? 359.999 : 1.2)
+    ([key, value]) => Number(value) <= (key === 'heading' ? HEADING_MAX : POOL_SIZE_M)
   );
+  // 全 0 在船端是"没有定位"（会切到二哈搜救），不能当作坐标导航启动
+  const autonomousFieldsAllZero = !autonomousFieldsEmpty
+    && Object.values(navigation).every((value) => Number(value) === 0);
 
   const armDrive = () => {
     if (!connected) return;
     if (controlMode === 'autonomous') {
       // 要么全部留空（走二哈搜救），要么全部填写且合法；部分填写视为错误
       if (!autonomousFieldsEmpty && !(autonomousFieldsComplete && autonomousFieldsInRange)) {
-        setError('坐标请全部留空（二哈自主搜救）或全部填写合法值：X/Y 为 0–1.2 米，航向 0–360 度');
+        setError(`坐标请全部留空（二哈自主搜救）或全部填写合法值：X/Y 为 0–${POOL_SIZE_M} 米，航向 0–${HEADING_MAX} 度`);
+        return;
+      }
+      if (autonomousFieldsAllZero) {
+        setError('坐标不能全为 0：船端会把全 0 当作"没有定位"并切到二哈搜救。若想走二哈搜救请把坐标清空。');
         return;
       }
     }
@@ -230,7 +421,7 @@ export function App() {
 
   const updateNavigation = (key, value) => setNavigation((current) => ({ ...current, [key]: value }));
 
-  const emergencyStop = () => { stopDrive(); setError('急停已触发，动力输出归零'); };
+  const emergencyStop = () => { stopDrive(true); setError('急停已触发：动力输出归零，视觉接管已切断'); };
 
   const startStream = () => {
     setVideoState('connecting');
@@ -294,7 +485,7 @@ export function App() {
   return <main className="console-shell">
     <header className="topbar">
       <a className="brand" href="#" aria-label="智护库安首页"><span className="brand-mark"><Anchor size={18} /></span><span>智护库安</span><i /></a>
-      <div className="top-status"><span className={connected ? 'status-dot on' : 'status-dot'} />{connected ? `串口在线 · ${selectedPort}` : '串口未连接'}<span className="divider" /><Waves size={14} className={videoLive ? 'live-icon' : ''} />{videoLive ? '视频实时' : '视频待连接'}</div>
+      <div className="top-status"><span className={connected ? 'status-dot on' : 'status-dot'} />{connected ? `串口在线 · ${selectedPort}` : '串口未连接'}<span className="divider" /><span className={vision.active ? 'status-dot on' : 'status-dot'} /><span className={vision.active ? 'vision-state active' : 'vision-state'}>{vision.active ? '视觉接管中' : vision.gate ? '视觉待机' : '视觉已屏蔽'}</span>{!vision.gate && <button className="vision-resume" onClick={allowVision} title="重新允许 locator.py 的坐标接管船">恢复视觉</button>}<span className="divider" /><Waves size={14} className={videoLive ? 'live-icon' : ''} />{videoLive ? '视频实时' : '视频待连接'}</div>
       <button className="header-stop" onClick={emergencyStop} title="立即切断控制输出"><CircleStop size={16} />急停 <kbd>SPACE</kbd></button>
     </header>
 
@@ -311,8 +502,8 @@ export function App() {
         <div className="telemetry-strip">
           <div className="metric direction-metric"><span className="metric-label"><Activity size={13} />操作方向</span><strong>{direction}</strong><small>{armed ? 'WASD 手动控制' : '控制未解锁'}</small></div>
           <div className="metric"><span className="metric-label"><Compass size={13} />船头航向</span><strong>{heading !== null ? `${Math.round((heading + 360) % 360).toString().padStart(3, '0')}°` : '---°'}</strong><small>{heading !== null ? '船端回传' : '当前固件无罗盘'}</small></div>
-          <div className="metric"><span className="metric-label"><Crosshair size={13} />目标识别</span><strong className={telemetry?.targetDetected ? 'target-found' : ''}>{telemetry?.targetDetected ? '已锁定' : '未检测'}</strong><small>{telemetry?.targetDetected ? `${telemetry.distance.toFixed(2)} m` : 'HUSKYLENS'}</small></div>
-          <div className="metric"><span className="metric-label"><Wifi size={13} />通信状态</span><strong className={telemetry?.emergency ? 'warn' : connected ? 'good' : ''}>{telemetry?.emergency ? '应急' : connected ? '稳定' : '离线'}</strong><small>ESP-NOW · CH 1</small></div>
+          <div className="metric"><span className="metric-label"><Crosshair size={13} />目标识别</span><strong className={telemetry?.targetDetected ? 'target-found' : ''}>{telemetry?.targetDetected ? '已锁定' : '未检测'}</strong><small>{telemetry?.targetDetected && Number.isFinite(telemetry?.distance) ? `${telemetry.distance.toFixed(2)} m` : 'HUSKYLENS'}</small></div>
+          <div className="metric"><span className="metric-label"><Wifi size={13} />通信状态</span><strong className={(telemetry?.emergency || telemetryStale) ? 'warn' : connected ? 'good' : ''}>{telemetry?.emergency ? '应急' : telemetryStale ? '遥测超时' : connected ? '稳定' : '离线'}</strong><small>{telemetryStale ? '超过 1.5 s 无数据' : 'ESP-NOW · CH 1'}</small></div>
         </div>
       </section>
 
@@ -334,9 +525,9 @@ export function App() {
 
         <div className="heading-panel"><div className="panel-title"><span><Compass size={14} />当前方向</span><span className="heading-readout">{heading !== null ? `${Math.round((heading + 360) % 360).toString().padStart(3, '0')}°` : '---°'}</span></div><div className="compass-line"><span>N</span><i className={axes.left ? 'turn-left' : axes.right ? 'turn-right' : ''}><ArrowUp size={17} /></i><span>S</span><div className="compass-scale"><b /><b /><b /><b /><b /><b /><b /><b /><b /></div></div><div className="current-direction"><span className={armed ? 'mini-dot on' : 'mini-dot'} />{direction}<em>{heading !== null ? '实时航向回传' : '等待姿态传感器'}</em></div></div>
 
-        {controlMode === 'manual' && <div className="drive-panel"><div className="panel-title"><span><Gamepad2 size={14} />方向控制</span><span className="keys-hint">W A S D</span></div><div className="keypad"><span /><KeyButton label="W" icon={<ArrowUp size={19} />} active={axes.forward} onDown={() => { if (armed) { const n = { ...pressedRef.current, forward: true }; pressedRef.current = n; setPressed(n); } }} onUp={() => { const n = { ...pressedRef.current, forward: false }; pressedRef.current = n; setPressed(n); }} /><span /><KeyButton label="A" icon={<ArrowLeft size={19} />} active={axes.left} onDown={() => { if (armed) { const n = { ...pressedRef.current, left: true }; pressedRef.current = n; setPressed(n); } }} onUp={() => { const n = { ...pressedRef.current, left: false }; pressedRef.current = n; setPressed(n); }} /><KeyButton label="S" icon={<ArrowDown size={19} />} active={axes.reverse} onDown={() => { if (armed) { const n = { ...pressedRef.current, reverse: true }; pressedRef.current = n; setPressed(n); } }} onUp={() => { const n = { ...pressedRef.current, reverse: false }; pressedRef.current = n; setPressed(n); }} /><KeyButton label="D" icon={<ArrowRight size={19} />} active={axes.right} onDown={() => { if (armed) { const n = { ...pressedRef.current, right: true }; pressedRef.current = n; setPressed(n); } }} onUp={() => { const n = { ...pressedRef.current, right: false }; pressedRef.current = n; setPressed(n); }} /></div><div className="drive-state"><span className={armed ? 'mini-dot on' : 'mini-dot'} />{armed ? '手动控制已解锁' : '待机中'}</div><button className={armed ? 'arm-button armed' : 'arm-button'} disabled={!connected} onClick={armed ? stopDrive : armDrive}><Shield size={15} />{armed ? '锁定动力' : connected ? '解锁驾驶' : '请先连接设备'}</button></div>}
+        {controlMode === 'manual' && <div className="drive-panel"><div className="panel-title"><span><Gamepad2 size={14} />方向控制</span><span className="keys-hint">W A S D</span></div><div className="keypad"><span /><KeyButton label="W" icon={<ArrowUp size={19} />} active={axes.forward} onDown={() => { if (armed) { const n = { ...pressedRef.current, forward: true }; pressedRef.current = n; setPressed(n); } }} onUp={() => { const n = { ...pressedRef.current, forward: false }; pressedRef.current = n; setPressed(n); }} /><span /><KeyButton label="A" icon={<ArrowLeft size={19} />} active={axes.left} onDown={() => { if (armed) { const n = { ...pressedRef.current, left: true }; pressedRef.current = n; setPressed(n); } }} onUp={() => { const n = { ...pressedRef.current, left: false }; pressedRef.current = n; setPressed(n); }} /><KeyButton label="S" icon={<ArrowDown size={19} />} active={axes.reverse} onDown={() => { if (armed) { const n = { ...pressedRef.current, reverse: true }; pressedRef.current = n; setPressed(n); } }} onUp={() => { const n = { ...pressedRef.current, reverse: false }; pressedRef.current = n; setPressed(n); }} /><KeyButton label="D" icon={<ArrowRight size={19} />} active={axes.right} onDown={() => { if (armed) { const n = { ...pressedRef.current, right: true }; pressedRef.current = n; setPressed(n); } }} onUp={() => { const n = { ...pressedRef.current, right: false }; pressedRef.current = n; setPressed(n); }} /></div><div className="drive-state"><span className={armed ? 'mini-dot on' : 'mini-dot'} />{armed ? '手动控制已解锁' : '待机中'}</div><button className={armed ? 'arm-button armed' : 'arm-button'} disabled={!connected} onClick={armed ? () => stopDrive(true) : armDrive}><Shield size={15} />{armed ? '锁定动力' : connected ? '解锁驾驶' : '请先连接设备'}</button></div>}
 
-        {controlMode === 'autonomous' && <div className="drive-panel autonomous-start"><div className="drive-state"><span className={armed ? 'mini-dot on' : 'mini-dot'} />{armed ? (autonomousFieldsEmpty ? '二哈自主搜救中 · 已持续下发' : '自主导航指令持续下发') : '待机中'}</div><button className={armed ? 'arm-button armed' : 'arm-button'} disabled={!connected} onClick={armed ? stopDrive : armDrive}><Shield size={15} />{armed ? '停止自主导航' : connected ? (autonomousFieldsEmpty ? '开始二哈自主搜救' : '开始自主导航') : '请先连接设备'}</button></div>}
+        {controlMode === 'autonomous' && <div className="drive-panel autonomous-start"><div className="drive-state"><span className={armed ? 'mini-dot on' : 'mini-dot'} />{armed ? (autonomousFieldsEmpty ? '二哈自主搜救中 · 已持续下发' : '自主导航指令持续下发') : '待机中'}</div><button className={armed ? 'arm-button armed' : 'arm-button'} disabled={!connected} onClick={armed ? () => stopDrive(true) : armDrive}><Shield size={15} />{armed ? '停止自主导航' : connected ? (autonomousFieldsEmpty ? '开始二哈自主搜救' : '开始自主导航') : '请先连接设备'}</button></div>}
 
         {controlMode === 'manual' && <div className="power-control"><div className="power-label"><span><Zap size={14} />最大动力</span><b>{power}%</b></div><input aria-label="最大动力" type="range" min="20" max="100" step="5" value={power} onChange={(e) => setPower(Number(e.target.value))} /></div>}
 
@@ -380,5 +571,5 @@ function KeyButton({ label, icon, active, onDown, onUp }) {
 
 function CoordinateInput({ label, value, onChange }) {
   const isHeading = label === '航向';
-  return <label className="coordinate-input">{label}<input type="number" inputMode="decimal" min="0" max={isHeading ? 359.9 : 1.2} step={isHeading ? '1' : '0.01'} value={value} onChange={(event) => onChange(event.target.value)} /></label>;
+  return <label className="coordinate-input">{label}<input type="number" inputMode="decimal" min="0" max={isHeading ? HEADING_MAX : POOL_SIZE_M} step={isHeading ? '1' : '0.01'} value={value} onChange={(event) => onChange(event.target.value)} /></label>;
 }

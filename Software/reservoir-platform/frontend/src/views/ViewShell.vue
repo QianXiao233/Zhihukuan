@@ -48,6 +48,7 @@
           <QuestionCircleOutlined />
           <span>需要帮助？询问 AI 助手</span>
         </button>
+        <a class="platform-icp" href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">鲁ICP备2026000583号</a>
       </div>
     </aside>
 

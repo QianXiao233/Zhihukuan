@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark" />
+  <title>STM32 RTU 模拟调试器 · 智御安澜</title>
+  <link rel="stylesheet" href="./simulator.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand__mark"><span>STM</span><b>32</b></div>
+      <div class="brand__copy">
+        <h1>RTU 模拟调试器</h1>
+        <p>模拟水库 STM32 采集板 · MQTT 数据上报 / 闸门控制</p>
+      </div>
+    </div>
+    <div class="header-status">
+      <div class="conn-pill" id="connPill" data-state="offline">
+        <i></i><span id="connText">未连接</span>
+      </div>
+      <button type="button" class="btn btn--primary" id="connectBtn">连接 Broker</button>
+    </div>
+  </header>
+
+  <div class="notice" id="brokerNotice" hidden>
+    <strong>注意：当前 Broker 不是本机地址</strong>
+    <span>模拟数据会直接写入线上平台，可能触发真实告警、通知和落库记录。请确认当前是调试环境。</span>
+    <button type="button" id="noticeUseLocal">切换到本地 Broker</button>
+  </div>
+
+  <section class="stats" aria-label="运行统计">
+    <article><span>链路状态</span><strong id="statLink">离线</strong></article>
+    <article><span>上报帧数</span><strong id="statTx">0</strong></article>
+    <article><span>控制帧数</span><strong id="statRx">0</strong></article>
+    <article><span>最近上报</span><strong id="statLast">—</strong></article>
+    <article><span>运行时长</span><strong id="statUptime">00:00:00</strong></article>
+  </section>
+
+  <main class="layout">
+    <div class="column column--main">
+      <section class="card">
+        <header class="card__head">
+          <div><h2>连接配置</h2><p>MQTT over WebSocket</p></div>
+          <span class="chip" id="brokerChip">未连接</span>
+        </header>
+        <div class="form-grid">
+          <label class="span-2">
+            <span>Broker 地址</span>
+            <input id="broker" type="text" spellcheck="false" placeholder="wss://zhka.demo.ai.qianxiao.xin/mqtt" />
+            <small>本机 EMQX：ws://127.0.0.1:8083/mqtt</small>
+          </label>
+          <label>
+            <span>Client ID</span>
+            <input id="clientId" type="text" spellcheck="false" />
+          </label>
+          <label>
+            <span>上报间隔（毫秒）</span>
+            <input id="interval" type="number" min="500" max="60000" step="500" />
+          </label>
+          <label>
+            <span>状态主题</span>
+            <input id="statusTopic" type="text" spellcheck="false" />
+          </label>
+          <label>
+            <span>控制主题</span>
+            <input id="controlTopic" type="text" spellcheck="false" />
+          </label>
+          <label>
+            <span>用户名（可选）</span>
+            <input id="username" type="text" autocomplete="off" spellcheck="false" />
+          </label>
+          <label>
+            <span>密码（可选，不保存）</span>
+            <input id="password" type="password" autocomplete="new-password" spellcheck="false" />
+          </label>
+        </div>
+        <div class="row-actions">
+          <button type="button" class="btn" id="presetLocal">本地 Broker</button>
+          <button type="button" class="btn" id="presetCloud">线上 Broker</button>
+          <button type="button" class="btn" id="disconnectBtn" hidden>断开连接</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <header class="card__head">
+          <div><h2>传感器数据</h2><p>对应 rtu/status 报文中的 level / temp / ph / orp</p></div>
+          <label class="switch switch--small"><input type="checkbox" id="drift" checked /><span></span>自动漂移</label>
+        </header>
+        <div class="sensors" id="sensors"></div>
+        <div class="row-actions">
+          <button type="button" class="btn" id="randomize">随机扰动</button>
+          <button type="button" class="btn" id="resetSensors">恢复默认</button>
+          <span class="hint" id="sensorHint">拖动滑杆即修改模拟读数，平台会在下一帧收到变化。</span>
+        </div>
+      </section>
+
+      <section class="card">
+        <header class="card__head">
+          <div><h2>闸门状态</h2><p>1 = 开启，0 = 关闭；对应 relay[0..5]</p></div>
+          <span class="chip chip--muted" id="gateChip">0 / 6 开启</span>
+        </header>
+        <div class="gates" id="gates"></div>
+        <div class="row-actions">
+          <button type="button" class="btn" id="allOpen">全部开启</button>
+          <button type="button" class="btn" id="allClose">全部关闭</button>
+          <button type="button" class="btn btn--accent" id="loopback">回环测试</button>
+          <span class="hint">回环测试会向控制主题发布一条 relay.set，用于验证订阅链路。</span>
+        </div>
+      </section>
+
+      <section class="card">
+        <header class="card__head">
+          <div><h2>上报控制</h2><p>自动上报、场景预设与特殊帧</p></div>
+          <label class="switch switch--small"><input type="checkbox" id="autoReport" checked /><span></span>自动上报</label>
+        </header>
+        <div class="row-actions row-actions--tight">
+          <button type="button" class="btn btn--primary" id="publishNow">立即上报</button>
+          <button type="button" class="btn" id="heartbeat">空帧心跳</button>
+          <button type="button" class="btn" id="pauseReport">暂停自动上报</button>
+        </div>
+        <div class="presets">
+          <button type="button" data-preset="normal">正常水情</button>
+          <button type="button" data-preset="flood">超汛限水位</button>
+          <button type="button" data-preset="water">水质异常</button>
+          <button type="button" data-preset="allopen">六闸全开</button>
+          <button type="button" data-preset="allclose">六闸全关</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <header class="card__head">
+          <div><h2>手动注入控制</h2><p>不经过 MQTT，直接验证控制报文解析</p></div>
+        </header>
+        <textarea id="rawControl" class="raw" rows="3" spellcheck="false">{"cmd":"relay.set","relay":1,"state":1}</textarea>
+        <div class="row-actions">
+          <button type="button" class="btn btn--primary" id="injectControl">本地注入</button>
+          <button type="button" class="btn" id="formatControl">格式化 JSON</button>
+          <span class="hint">支持 relay.set（单闸门）与 relay.all（全部闸门）。</span>
+        </div>
+      </section>
+    </div>
+
+    <aside class="column column--side">
+      <section class="card payload-card">
+        <header class="card__head">
+          <div><h2>当前上报报文</h2><p id="payloadMeta">尚未发送</p></div>
+          <button type="button" class="btn btn--tiny" id="copyStatus">复制</button>
+        </header>
+        <pre class="payload" id="statusPreview">{}</pre>
+      </section>
+
+      <section class="card log-card">
+        <header class="card__head">
+          <div><h2>消息日志</h2><p id="logMeta">等待连接</p></div>
+          <div class="log-actions">
+            <button type="button" class="btn btn--tiny" id="pauseLog">暂停</button>
+            <button type="button" class="btn btn--tiny" id="clearLog">清空</button>
+          </div>
+        </header>
+        <div class="log" id="log" role="log" aria-live="polite"></div>
+      </section>
+
+      <section class="card">
+        <header class="card__head">
+          <div><h2>协议速查</h2><p>与前端、后端当前实现一致</p></div>
+        </header>
+        <div class="protocol">
+          <div><span>上报主题</span><code>rtu/status</code></div>
+          <div><span>控制主题</span><code>rtu/control</code></div>
+          <div><span>单闸门</span><code>{"cmd":"relay.set","relay":1,"state":1}</code></div>
+          <div><span>全部闸门</span><code>{"cmd":"relay.all","state":0}</code></div>
+          <div><span>上报字段</span><code>level, temp, ph, orp, relay[6]</code></div>
+          <div><span>缺测</span><code>level: null（不要写 0）</code></div>
+        </div>
+        <p class="protocol-note">后端会把 level/temp/ph/orp 全为 null 的帧当作心跳丢弃，不落库、不触发阈值告警。</p>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="app-footer">
+    <span>STM32 RTU Simulator · 本地调试工具</span>
+    <span id="footerHint">双击 index.html 即可运行；也可用 python -m http.server 托管。</span>
+  </footer>
+
+  <script src="./vendor/mqtt.min.js"></script>
+  <script src="./simulator.js"></script>
+</body>
+</html>

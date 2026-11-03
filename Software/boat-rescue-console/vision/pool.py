@@ -49,24 +49,38 @@ def _find_homography(src_px: np.ndarray, dst_m: np.ndarray) -> np.ndarray:
     return H
 
 
-def compute_homography(image_points: np.ndarray, pool_size: float = POOL_SIZE_M) -> np.ndarray:
+def compute_homography(image_points: np.ndarray, pool_size: float = POOL_SIZE_M,
+                       pool_width_m: float | None = None,
+                       pool_height_m: float | None = None) -> np.ndarray:
     """
-    由四个像素点计算单应性矩阵。
+    由四个像素点计算单应性矩阵（像素 -> 米）。
 
     :param image_points: 形状 (4,2)，按 左下 -> 右下 -> 右上 -> 左上 的顺序
-    :param pool_size: 水池边长（米）
-    :return: 3x3 单应性矩阵（像素 -> 米）
+    :param pool_size: 正方形水池的边长（米）；给了 width/height 时忽略
+    :param pool_width_m: 水池宽（X 方向，米）；默认等于 pool_size
+    :param pool_height_m: 水池高（Y 方向，米）；默认等于 pool_size
+    :return: 3x3 单应性矩阵
+
+    说明：现场水池常常**不是正方形**（本项目沙盘池是圆角梯形）。四点单应
+    只要求目标四边形的四个角，宽高可以不同；用同一个边长去映射非正方形池
+    会让米坐标在一个方向整体缩放错，而且不会有任何报错 —— 所以这里允许
+    分别给宽高。
     """
     if image_points.shape != (4, 2):
         raise ValueError(f"需要 4 个点，收到 {image_points.shape}")
+
+    width = float(pool_width_m if pool_width_m is not None else pool_size)
+    height = float(pool_height_m if pool_height_m is not None else pool_size)
+    if width <= 0 or height <= 0:
+        raise ValueError(f"水池宽高必须为正，收到 {width} x {height}")
 
     # 目标坐标系：左下为原点，X 向右，Y 向上
     dst = np.array(
         [
             [0.0, 0.0],
-            [pool_size, 0.0],
-            [pool_size, pool_size],
-            [0.0, pool_size],
+            [width, 0.0],
+            [width, height],
+            [0.0, height],
         ],
         dtype=np.float64,
     )
@@ -84,38 +98,91 @@ def pixel_to_pool(H: np.ndarray, point_px) -> tuple[float, float]:
     return float(px), float(py)
 
 
-def save_calibration(H: np.ndarray, image_points: np.ndarray, path: Path = CALIB_FILE) -> None:
-    path.write_text(
-        json.dumps(
-            {
-                "pool_size_m": POOL_SIZE_M,
-                "image_points": image_points.tolist(),
-                "homography": H.tolist(),
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+def save_calibration(H: np.ndarray, image_points: np.ndarray,
+                     image_size: tuple[int, int] | None = None,
+                     path: Path = CALIB_FILE,
+                     pool_polygon_px: np.ndarray | None = None,
+                     pool_width_m: float | None = None,
+                     pool_height_m: float | None = None) -> None:
+    """
+    保存标定结果。
+
+    :param image_size: 标定时的相机分辨率 (w, h)。**必须存**：单应矩阵是像素坐标
+        的函数，换分辨率后同一组 H 会把米坐标整体缩放错，且不会有任何报错。
+    """
+    data = {
+        "pool_size_m": POOL_SIZE_M,
+        "image_points": np.asarray(image_points, dtype=np.float64).tolist(),
+        "homography": np.asarray(H, dtype=np.float64).tolist(),
+    }
+    # 非矩形水池：把像素轮廓也存下来，运行期用于多边形内判定
+    if pool_polygon_px is not None:
+        poly = np.asarray(pool_polygon_px, dtype=np.float64).reshape(-1, 2)
+        data["pool_polygon_px"] = poly.tolist()
+        # 同时存米坐标版本，detector 直接用，避免运行期再算一遍
+        try:
+            data["pool_polygon_m"] = [list(map(float, pixel_to_pool(H, pt))) for pt in poly]
+        except Exception:
+            pass
+    if pool_width_m is not None:
+        data["pool_width_m"] = float(pool_width_m)
+    if pool_height_m is not None:
+        data["pool_height_m"] = float(pool_height_m)
+    if image_size is not None:
+        data["image_width"], data["image_height"] = int(image_size[0]), int(image_size[1])
+
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
-def load_calibration(path: Path = CALIB_FILE) -> np.ndarray:
+def load_calibration_info(path: Path = CALIB_FILE) -> dict:
+    """读取标定文件，返回 {homography, image_width, image_height, ...}。"""
     if not path.exists():
         raise FileNotFoundError(
             f"未找到标定文件 {path.name}，请先运行: python locator.py --calibrate"
         )
     data = json.loads(path.read_text(encoding="utf-8"))
-    return np.array(data["homography"], dtype=np.float64)
+    data["homography"] = np.array(data["homography"], dtype=np.float64)
+    return data
 
 
-def calibrate_interactively(camera_index: int = 0) -> None:
+def load_calibration(path: Path = CALIB_FILE) -> np.ndarray:
+    """只取单应矩阵（老接口，保留向后兼容）。"""
+    return load_calibration_info(path)["homography"]
+
+
+def check_resolution(info: dict, width: int, height: int) -> str | None:
+    """
+    校验"标定分辨率"与"当前分辨率"是否一致。
+
+    :return: 不一致时返回给用户看的错误文本；一致或旧标定文件（无尺寸字段）返回 None。
+    """
+    cw, ch = info.get("image_width"), info.get("image_height")
+    if cw is None or ch is None:
+        return None
+    if int(cw) != int(width) or int(ch) != int(height):
+        return (
+            f"标定分辨率 {int(cw)}x{int(ch)} 与当前相机分辨率 {width}x{height} 不一致，"
+            "坐标会整体缩放错。请用同一分辨率重新运行: python locator.py --calibrate"
+        )
+    return None
+
+
+def calibrate_interactively(camera_index: int = 0,
+                            width: int = 1920,
+                            height: int = 1080) -> None:
     """打开相机，让用户点击水池四角，计算并保存标定结果。"""
     cap = cv2.VideoCapture(camera_index)
     if not cap.isOpened():
         raise RuntimeError(f"无法打开相机 index={camera_index}")
 
-    # 尽量取高分辨率，定位精度直接依赖像素密度
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+    # 尽量取高分辨率，定位精度直接依赖像素密度。
+    # 必须把**实际生效**的分辨率随 H 一起存下来：运行时如果相机给的是
+    # 1280x720 而标定按 1920x1080 算，米坐标会整体缩放错且没有任何报错。
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    print(f"标定分辨率: 请求 {width}x{height}，实际 {actual_w}x{actual_h}")
 
     points: list[tuple[int, int]] = []
     window = "calibrate - click 4 pool corners: BL, BR, TR, TL  (r=reset, q=quit)"
@@ -155,8 +222,9 @@ def calibrate_interactively(camera_index: int = 0) -> None:
             print("  已重置")
         if len(points) == 4:
             H = compute_homography(np.array(points, dtype=np.float32))
-            save_calibration(H, np.array(points, dtype=np.float32))
-            print(f"标定完成，已保存到 {CALIB_FILE}")
+            save_calibration(H, np.array(points, dtype=np.float32),
+                             image_size=(actual_w, actual_h))
+            print(f"标定完成，已保存到 {CALIB_FILE}（分辨率 {actual_w}x{actual_h}）")
             # 自检：把四角映射回去，应得到 (0,0) (L,0) (L,L) (0,L)
             for pt in points:
                 print(f"    {pt} -> {pixel_to_pool(H, pt)}")

@@ -4,7 +4,19 @@
 前端只用相对路径 `/api`、`/auth`、`/health`，由 Nginx 反代到后端，因此不存在跨域问题。
 
 - Nginx 配置：[`deploy/nginx/zhka.demo.ai.qianxiao.xin.conf`](nginx/zhka.demo.ai.qianxiao.xin.conf)
-- 站点根目录：`/www/wwwroot/zhka/reservoir-platform`（配置里的 `root`，按需修改）
+
+> **实际部署布局（2026-10-27 在 zhka 上核实，和下面正文里的旧路径不同，以这段为准）**
+>
+> | 项 | 实际值 |
+> | :--- | :--- |
+> | 前端站点根 | `/www/wwwroot/zhka/h5/reservoir-platform`（宝塔站点 `zhka` 的 `h5/` 子目录） |
+> | 后端目录 | `/www/wwwroot/zhka/backend/dam-server`（不在 nginx root 内） |
+> | 站点 vhost | `/www/server/panel/vhost/nginx/html_zhka.demo.ai.qianxiao.xin.conf`（带 `html_` 前缀） |
+> | 前端 nginx root | `/www/wwwroot/zhka/h5/reservoir-platform` |
+>
+> 下文出现的 `/www/wwwroot/zhka/reservoir-platform` 是早期路径，**照抄会传错目录**。
+> 只替换静态文件时**不需要重启 nginx**（nginx 直接读磁盘），只有改 vhost 配置才需要
+> `systemctl restart nginx`（本机 reload 不生效）。
 
 ---
 
@@ -31,21 +43,57 @@ npm run build     # 产物在 frontend/dist
 ```
 dist/
 ├── index.html
-└── assets/   # 文件名带 content hash，可长缓存
+├── assets/          # 文件名带 content hash，可长缓存
+└── models/          # 首页大坝沙盘 dam.glb（public/ 原样复制）
 ```
+
+### 1.1 无人艇驾驶台（`/boat` 页面）
+
+`/boat` 页面是**平台原生的 Vue 页面**（`views/BoatView.vue` + `views/BoatView.css`），
+直接复用平台的 `ViewShell` 与卡片/徽标/按钮样式，不引入 iframe，也不加载第二套 UI 框架。
+页面通过本地 `serial-service`（`127.0.0.1:4174`）读写船端链路，功能包括：
+
+- 串口连接/断开、船端遥测、WASD 手动驾驶（可调推进功率）、自主坐标导航；
+- 视觉接管状态（`locator.py` 通过服务端接管时显示"视觉接管中/待机/已屏蔽"），
+  急停/空格/ESC 会关闭服务端的视觉闸门，真正停船；
+- 遥测看门狗（1.5 s 无数据自动锁定网页动力）、投放释放（二次确认 + 6 s 状态复位）、
+  Janus 船载视频接入、断线自动重连、坐标校验（全 0 / 越界直接拒绝）。
+
+> `Software/boat-rescue-console` 里的 React 驾驶台仍然保留，作为**独立调试工具**
+> （`cd Software/boat-rescue-console && npm run dev`），不再参与平台构建，也不再上传到服务器。
+
+**部署后云端的两个网络限制（已验证）**：
+
+| 目标 | 结果 | 说明 |
+| :--- | :--- | :--- |
+| `http://127.0.0.1:4174`（本地桥接服务） | ✅ 可用 | Chrome 把 loopback 当可信源，HTTPS 页面可直接 fetch，**WebSocket 也能连**（实测 Chrome 156，`ws://127.0.0.1:4174` 正常收发） |
+| `http://192.168.2.14:8088/janus`（船载视频） | ❌ 被拦 | 局域网 HTTP 不属于可信源，HTTPS 页面会按混合内容拦掉 |
+
+所以：**云端页面可以用来操控本地船（串口服务在本机运行时），但船载视频要额外处理**。
+两种办法：① 给 Janus 配一个 HTTPS/WSS 反代（如 `https://<域名>/janus`），构建时设
+`VITE_JANUS_URL=https://<域名>/janus`；② 现场用本机 `npm run dev` 打开页面
+（http 页面没有混合内容问题）。
 
 ## 2. 上传到服务器
 
 ```bash
-# 本地执行（把 dist 内容整体传到站点根目录，注意是 dist 里的内容，别多套一层 dist）
-scp -r frontend/dist/* root@<服务器IP>:/www/wwwroot/zhka/reservoir-platform/
+# 本地构建
+cd frontend
+npm run build
+
+# 建议先备份服务器上的旧产物
+ssh root@81.70.63.53 'tar czf /root/zhka-reservoir-platform-$(date +%Y%m%d-%H%M%S).tar.gz -C /www/wwwroot/zhka/h5 reservoir-platform'
+
+# 上传（注意是 dist 里的内容，别多套一层 dist；站点根是 h5/ 子目录）
+scp -r frontend/dist/* root@81.70.63.53:/www/wwwroot/zhka/h5/reservoir-platform/
 
 # 服务器上修正属主/权限（宝塔面板默认 www 用户）
-chown -R www:www /www/wwwroot/zhka/reservoir-platform
-chmod -R 755 /www/wwwroot/zhka/reservoir-platform
+ssh root@81.70.63.53 'chown -R www:www /www/wwwroot/zhka/h5/reservoir-platform && chmod -R 755 /www/wwwroot/zhka/h5/reservoir-platform'
 ```
 
-目录里最终应该是 `/www/wwwroot/zhka/reservoir-platform/index.html` 和 `assets/`。
+目录里最终应该是 `/www/wwwroot/zhka/h5/reservoir-platform/index.html`、`assets/`、
+`models/`（`models/dam.glb` 是首页大坝沙盘，别删）。旧版本可能留下 `console/`
+（早先 iframe 方案，已无引用），确认页面正常后可以删掉。
 
 ## 3. 启用 Nginx 配置
 
@@ -60,7 +108,7 @@ nginx -t && systemctl restart nginx
 > 改完配置一律用 `systemctl restart nginx`（或宝塔面板里的「重启」），
 > 并用 `ps -eo pid,lstart,cmd | grep 'nginx: master'` 确认 master 的启动时间变了。
 
-宝塔面板里的位置是 `/www/server/panel/vhost/nginx/zhka.demo.ai.qianxiao.xin.conf`，
+宝塔面板里的位置是 `/www/server/panel/vhost/nginx/html_zhka.demo.ai.qianxiao.xin.conf`，
 在「网站 → 设置 → 配置文件」里**整体替换，不要往已有内容里粘贴**。
 
 > 这个文件本身就是一个完整的 `server { }`，粘贴到面板已有的 vhost 里会出现
@@ -136,7 +184,7 @@ curl -i http://127.0.0.1:8085/health
 
 ```bash
 # 启动示例（按实际 jar 名/路径调整）
-nohup java -jar /www/wwwroot/zhka/reservoir-platform/backend.jar \
+nohup java -jar /www/wwwroot/zhka/backend/dam-server/dam-server-2.0.1.jar \
   --server.address=127.0.0.1 > /www/wwwlogs/reservoir-backend.log 2>&1 &
 ```
 

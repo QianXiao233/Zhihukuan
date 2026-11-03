@@ -38,6 +38,17 @@ function visionNavFresh() {
   return visionNav !== null && (Date.now() - visionNavAt) <= VISION_TIMEOUT_MS;
 }
 
+/** 当前视觉通道状态（网页据此显示"视觉接管中/已屏蔽"）。 */
+function visionState() {
+  return {
+    gate: visionGate,
+    active: visionGate && visionNavFresh(),
+    ageMs: visionNav === null ? null : Date.now() - visionNavAt,
+    // 把视觉当前下发的坐标也带上：驾驶台可以直接显示 locator.py 看到的船/目标位置
+    navigation: visionNav,
+  };
+}
+
 /**
  * 投放释放：一次性动作。
  *
@@ -48,13 +59,32 @@ function visionNavFresh() {
  *   串口帧可能丢失，而投放是不可逆动作 —— 重复执行只是舵机多动一次（无害，
  *   船端也会在动作期间忽略重复触发），但漏执行则整个救援任务失败。
  *   所以宁可多发几帧保证送达，由船端的"动作期间忽略重复"来防重复投放。
+ *
+ * 为什么是 600 ms 而不是 200 ms：
+ *   桥接板在降温改造后是**每 500 ms 才把最新命令转发一次**（不是收到就发），
+ *   200 ms 的时间窗有约 60% 的概率整个落在两次转发之间，"点投放但船没反应"
+ *   就是这么来的。现在桥接板对释放帧改成**立即转发**（见 espnow_bridge.c），
+ *   窗口再放宽到 600 ms 作为双保险：即使某一帧丢了，后续帧仍会被立即送出。
  */
-const RELEASE_HOLD_MS = 200;
+const RELEASE_HOLD_MS = 600;
 let releaseUntil = 0;
 
 function releaseActive() {
   return Date.now() < releaseUntil;
 }
+
+/**
+ * 视觉接管闸门（安全开关）。
+ *
+ * 默认 true，保持"跑 locator.py 就能自动接管"的原有用法；但网页可以显式关闭
+ * （急停/停止自主导航时发 {type:'visionGate', allow:false}）。
+ *
+ * 为什么必须有：视觉程序推送坐标时，服务端会用**强制 armed=true** 的帧覆盖网页
+ * 指令——原来网页的急停、空格、失锁对这条通道完全无效，操作员按了红色急停船还在跑。
+ * 现在闸门关闭后视觉坐标一律不生效，网页的停止指令重新拥有最高优先级（释放除外）。
+ */
+let visionGate = true;
+let visionAllZeroWarned = false;
 
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -93,9 +123,7 @@ const server = http.createServer(async (req, res) => {
       connected: serialReady,
       port: serial?.path ?? null,
       telemetry,
-      vision: visionNavFresh()
-        ? { active: true, ageMs: Date.now() - visionNavAt, navigation: visionNav }
-        : { active: false, ageMs: visionNav === null ? null : Date.now() - visionNavAt, navigation: visionNav },
+      vision: { ...visionState(), navigation: visionNav },
       releasing: releaseActive(),
     }));
   }
@@ -132,8 +160,20 @@ const server = http.createServer(async (req, res) => {
         targetY: Number(parsed.targetY),
       };
       visionNavAt = Date.now();
+
+      // 四点全 0 是"没有定位"的约定值，船端会据此走纯二哈搜救。
+      // 视觉程序如果反复推全 0，说明它没真正锁上船/目标，这里提示一次便于排查。
+      if ([parsed.boatX, parsed.boatY, parsed.targetX, parsed.targetY].every((v) => Number(v) === 0)) {
+        if (!visionAllZeroWarned) {
+          visionAllZeroWarned = true;
+          console.warn('[vision] 收到全 0 坐标：船端会按"无定位"处理并进入二哈搜救模式');
+        }
+      } else {
+        visionAllZeroWarned = false;
+      }
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ ok: true, navigation: visionNav }));
+      return res.end(JSON.stringify({ ok: true, suppressed: !visionGate, navigation: visionNav }));
     });
     return;
   }
@@ -142,6 +182,7 @@ const server = http.createServer(async (req, res) => {
   if (req.url === '/api/navigation' && req.method === 'DELETE') {
     visionNav = null;
     visionNavAt = 0;
+    visionAllZeroWarned = false;
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ ok: true }));
   }
@@ -236,7 +277,13 @@ const server = http.createServer(async (req, res) => {
 const wss = new WebSocketServer({ server });
 wss.on('connection', (socket) => {
   clients.add(socket);
-  socket.send(JSON.stringify({ type: 'connection', connected: serialReady, port: serial?.path ?? null, telemetry }));
+  socket.send(JSON.stringify({
+    type: 'connection',
+    connected: serialReady,
+    port: serial?.path ?? null,
+    telemetry,
+    vision: visionState(),
+  }));
   socket.on('message', (raw) => {
     try {
       const next = JSON.parse(raw.toString());
@@ -265,6 +312,14 @@ wss.on('connection', (socket) => {
         } else {
           broadcast({ type: 'error', message: '未连接串口，无法触发投放' });
         }
+      } else if (next.type === 'visionGate') {
+        // 网页侧的视觉接管开关：allow=false 时视觉坐标一律不生效，
+        // 网页的停止/急停重新拥有最高优先级（释放动作除外）。
+        if (typeof next.allow === 'boolean' && next.allow !== visionGate) {
+          visionGate = next.allow;
+          console.log(`[vision] 视觉接管已${visionGate ? '允许' : '屏蔽'}`);
+          broadcast({ type: 'vision', ...visionState() });
+        }
       }
     } catch {}
   });
@@ -288,9 +343,10 @@ function encodeCommand() {
     return encodeGroundToBoat(command, true, { missionState: 2, releaseFlag: 1 });
   }
 
-  // 视觉定位优先：只要 Python 程序还在持续推送，就以它为准进入自主航行。
+  // 视觉定位优先：只要闸门允许且 Python 程序还在持续推送，就以它为准进入自主航行。
   // 这样网页不需要（也无法）手动填坐标，且 vision 停推后 400 ms 内自动交还控制权。
-  if (visionNavFresh()) {
+  // 闸门关闭时（急停/手动接管）视觉坐标完全不生效，网页指令恢复最高优先级。
+  if (visionGate && visionNavFresh()) {
     return encodeGroundToBoat(
       { armed: true, mode: 'autonomous', throttle: 0, steer: 0, navigation: visionNav },
       true,
@@ -351,8 +407,16 @@ function broadcast(message) {
  * 现在显式处理回调，并在连续失败时把状态置回未连接，让界面能如实反映。
  */
 let consecutiveWriteFailures = 0;
+let lastVisionActive = false;
 
 setInterval(() => {
+  // 视觉通道的"接管/交还"变化要主动推给网页，否则操作员看不到谁在控制船。
+  const visionActiveNow = visionGate && visionNavFresh();
+  if (visionActiveNow !== lastVisionActive) {
+    lastVisionActive = visionActiveNow;
+    broadcast({ type: 'vision', ...visionState() });
+  }
+
   if (!serialReady || !serial) return;
 
   serial.write(encodeCommand(), (error) => {

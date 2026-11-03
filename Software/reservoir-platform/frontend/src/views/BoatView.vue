@@ -9,6 +9,11 @@
           <small v-else-if="boatDeviceError" class="boat-device-code is-error">{{ boatDeviceError }}</small>
           <p>控制链路为本地 WebSocket → serial-service → 串口 → ESP-NOW。页面只负责下发驾驶指令和显示船端遥测。</p>
           <div class="boat-status" :class="{ 'is-offline': !serialConnected }"><i></i>{{ serialConnected ? '串口已连接，可接管无人艇' : '串口未连接，当前仅可查看界面' }}<span>{{ selectedPort || '等待桥接板端口' }}</span></div>
+          <div class="boat-hero__actions">
+            <div class="boat-status is-vision" :class="{ 'is-offline': !vision.active, 'is-blocked': !vision.gate }"><i></i>{{ visionLabel }}<span>{{ visionAgeText }}</span></div>
+            <button v-if="!vision.gate" type="button" class="secondary-button is-compact" @click="allowVision">恢复视觉接管</button>
+            <button type="button" class="emergency-button" @click="emergencyStop">急停 <kbd>SPACE</kbd></button>
+          </div>
         </div>
         <div class="boat-visual"><div class="boat-water"></div><div class="boat-route"></div><div class="boat-model">◢<small>{{ boatDevice?.deviceCode || '无人艇' }}</small></div><span class="boat-map-label label-a">航行示意</span><span class="boat-map-label label-b">控制链路示意</span></div>
       </section>
@@ -21,17 +26,24 @@
           <button v-else type="button" class="secondary-button" @click="disconnectSerial">断开串口</button>
           <p class="card-note">桥接板服务地址：127.0.0.1:4174 · 115200 baud</p>
         </article>
-        <article class="boat-card"><header><h2>船端遥测</h2><span class="badge" :class="telemetry ? 'badge-green' : 'badge-gray'">{{ telemetry ? '持续回传' : '等待数据' }}</span></header><dl><div><dt>左侧电机</dt><dd>{{ telemetry ? telemetry.leftMotor : '—' }}</dd></div><div><dt>右侧电机</dt><dd>{{ telemetry ? telemetry.rightMotor : '—' }}</dd></div><div><dt>目标识别</dt><dd>{{ telemetry?.targetDetected ? '已锁定' : '未检测' }}</dd></div><div><dt>目标距离</dt><dd>{{ telemetry?.targetDetected ? `${Number(telemetry.distance).toFixed(2)} m` : '—' }}</dd></div></dl></article>
-        <article class="boat-card"><header><h2>任务状态</h2><span class="badge badge-blue">{{ missionLabel }}</span></header><ul class="boat-checks"><li><i :class="{ warn: !serialConnected }"></i>串口桥接服务 <b :class="{ warn: !serialConnected }">{{ serialConnected ? '正常' : '未连接' }}</b></li><li><i :class="{ warn: telemetry?.emergency }"></i>船端安全状态 <b :class="{ warn: telemetry?.emergency }">{{ telemetry?.emergency ? '应急' : '监视中' }}</b></li><li><i></i>HUSKYLENS 目标识别 <b>{{ telemetry?.targetDetected ? '已锁定' : '待识别' }}</b></li><li><i :class="{ warn: videoState === 'error' }"></i>船载视频回传 <b :class="{ warn: videoState === 'error' }">{{ videoState === 'live' ? '实时中' : videoState === 'error' ? '连接异常' : '待接入' }}</b></li></ul></article>
+        <article class="boat-card">
+          <header><h2>船端遥测</h2><span class="badge" :class="telemetryStale ? 'badge-red' : telemetry ? 'badge-green' : 'badge-gray'">{{ telemetryStale ? (telemetrySeen ? '遥测中断' : '无遥测') : telemetry ? '持续回传' : '等待数据' }}</span></header>
+          <dl><div><dt>左侧电机</dt><dd>{{ telemetry ? telemetry.leftMotor : '—' }}</dd></div><div><dt>右侧电机</dt><dd>{{ telemetry ? telemetry.rightMotor : '—' }}</dd></div><div><dt>船头航向</dt><dd>{{ headingText }}</dd></div><div><dt>通信状态</dt><dd :class="{ warn: telemetryStale }">{{ commText }}</dd></div><div><dt>目标识别</dt><dd>{{ telemetry?.targetDetected ? '已锁定' : '未检测' }}</dd></div><div><dt>目标距离</dt><dd>{{ targetDistanceText }}</dd></div></dl>
+          <p class="card-note is-vision">视觉下发：{{ visionNavText }}</p>
+        </article>
+        <article class="boat-card"><header><h2>任务状态</h2><span class="badge badge-blue">{{ missionLabel }}</span></header><ul class="boat-checks"><li><i :class="{ warn: !serialConnected }"></i>串口桥接服务 <b :class="{ warn: !serialConnected }">{{ serialConnected ? '正常' : '未连接' }}</b></li><li><i :class="{ warn: telemetryStale }"></i>遥测链路 <b :class="{ warn: telemetryStale }">{{ telemetryStale ? (telemetrySeen ? '中断 1.5s' : '无数据') : '正常' }}</b></li><li><i :class="{ warn: !vision.active && vision.gate }"></i>视觉定位接管 <b :class="{ warn: !vision.active && vision.gate }">{{ visionLabel }}</b></li><li><i :class="{ warn: telemetry?.emergency }"></i>船端安全状态 <b :class="{ warn: telemetry?.emergency }">{{ telemetry?.emergency ? '应急' : '监视中' }}</b></li><li><i :class="{ warn: videoState === 'error' }"></i>船载视频回传 <b :class="{ warn: videoState === 'error' }">{{ videoState === 'live' ? '实时中' : videoState === 'error' ? '连接异常' : '待接入' }}</b></li></ul></article>
       </section>
 
       <section class="boat-control-grid">
         <article class="boat-card control-card">
-          <header><div><h2>驾驶控制</h2><small>WASD 按住驱动 · 松开即停</small></div><span class="badge" :class="armed ? 'badge-green' : 'badge-gray'">{{ armed ? '动力已解锁' : '动力已锁定' }}</span></header>
+          <header><div><h2>驾驶控制</h2><small>WASD 按住驱动 · 松开即停</small></div><div class="header-badges"><span class="badge" :class="vision.active ? 'badge-orange' : 'badge-gray'">{{ visionLabel }}</span><span class="badge" :class="armed ? 'badge-green' : 'badge-gray'">{{ armed ? '动力已解锁' : '动力已锁定' }}</span></div></header>
           <div class="mode-switch"><button type="button" :class="{ selected: controlMode === 'manual' }" @click="changeControlMode('manual')">手动</button><button type="button" :class="{ selected: controlMode === 'autonomous' }" @click="changeControlMode('autonomous')">自主</button></div>
-          <div v-if="controlMode === 'manual'" class="keypad"><span></span><button type="button" :class="{ active: pressed.forward }" @pointerdown="setDrive('forward', true)" @pointerup="setDrive('forward', false)" @pointerleave="setDrive('forward', false)">W</button><span></span><button type="button" :class="{ active: pressed.left }" @pointerdown="setDrive('left', true)" @pointerup="setDrive('left', false)" @pointerleave="setDrive('left', false)">A</button><button type="button" :class="{ active: pressed.reverse }" @pointerdown="setDrive('reverse', true)" @pointerup="setDrive('reverse', false)" @pointerleave="setDrive('reverse', false)">S</button><button type="button" :class="{ active: pressed.right }" @pointerdown="setDrive('right', true)" @pointerup="setDrive('right', false)" @pointerleave="setDrive('right', false)">D</button></div>
-          <div v-else class="navigation-grid"><label>船 X<input v-model="navigation.boatX" inputmode="decimal" placeholder="0–1.2 m" /></label><label>船 Y<input v-model="navigation.boatY" inputmode="decimal" placeholder="0–1.2 m" /></label><label>航向<input v-model="navigation.heading" inputmode="decimal" placeholder="0–360°" /></label><label>目标 X<input v-model="navigation.targetX" inputmode="decimal" placeholder="0–1.2 m" /></label><label>目标 Y<input v-model="navigation.targetY" inputmode="decimal" placeholder="0–1.2 m" /></label><p>坐标全部留空时，船端进入 HUSKYLENS 视觉搜救模式。</p></div>
-          <div class="control-footer"><span><i :class="{ on: armed }"></i>{{ armed ? (controlMode === 'manual' ? '手动控制中' : '自主导航中') : '待机中' }}</span><button type="button" class="arm-button" :class="{ armed }" :disabled="!serialConnected" @click="armed ? stopDrive() : armDrive()">{{ armed ? '锁定动力' : serialConnected ? '解锁驾驶' : '请先连接设备' }}</button></div>
+          <div v-if="controlMode === 'manual'" class="manual-panel">
+            <div class="keypad"><span></span><button type="button" :class="{ active: pressed.forward }" @pointerdown="setDrive('forward', true)" @pointerup="setDrive('forward', false)" @pointerleave="setDrive('forward', false)">W</button><span></span><button type="button" :class="{ active: pressed.left }" @pointerdown="setDrive('left', true)" @pointerup="setDrive('left', false)" @pointerleave="setDrive('left', false)">A</button><button type="button" :class="{ active: pressed.reverse }" @pointerdown="setDrive('reverse', true)" @pointerup="setDrive('reverse', false)" @pointerleave="setDrive('reverse', false)">S</button><button type="button" :class="{ active: pressed.right }" @pointerdown="setDrive('right', true)" @pointerup="setDrive('right', false)" @pointerleave="setDrive('right', false)">D</button></div>
+            <label class="power-row"><span>推进功率</span><input v-model.number="power" type="range" min="20" max="100" step="5" /><b>{{ power }}%</b></label>
+          </div>
+          <div v-else class="navigation-grid"><label>船 X<input v-model="navigation.boatX" inputmode="decimal" placeholder="0–1.2 m" /></label><label>船 Y<input v-model="navigation.boatY" inputmode="decimal" placeholder="0–1.2 m" /></label><label>航向<input v-model="navigation.heading" inputmode="decimal" placeholder="0–359.9°" /></label><label>目标 X<input v-model="navigation.targetX" inputmode="decimal" placeholder="0–1.2 m" /></label><label>目标 Y<input v-model="navigation.targetY" inputmode="decimal" placeholder="0–1.2 m" /></label><p>坐标全部留空时，船端进入 HUSKYLENS 视觉搜救模式；四项坐标全 0 会被船端当作“无定位”，不能用来跑坐标导航。</p></div>
+          <div class="control-footer"><span><i :class="{ on: armed }"></i>{{ armed ? (controlMode === 'manual' ? '手动控制中' : '自主导航中') : '待机中' }}</span><button type="button" class="arm-button" :class="{ armed }" :disabled="!serialConnected" @click="armed ? stopDrive(true) : armDrive()">{{ armed ? '锁定动力' : serialConnected ? '解锁驾驶' : '请先连接设备' }}</button></div>
         </article>
 
         <article class="boat-card telemetry-card boat-stream-card">
@@ -49,7 +61,9 @@
             <div class="stream-overlay"><span><i :class="{ online: videoState === 'live' }"></i>{{ videoState === 'live' ? 'LIVE · 船载视角' : '船载视角' }}</span><span>Janus WebRTC</span></div>
             <div v-if="videoState === 'live'" class="stream-bottom"><span>WEBRTC · {{ STREAM_ID }}</span><div><button type="button" @click="stopStream">断开</button><button type="button" @click="toggleStreamFullscreen">全屏</button></div></div>
           </div>
-          <div class="telemetry-line"><span>船头航向</span><strong>{{ headingText }}</strong><span>推进输出</span><strong>{{ propulsionText }}</strong></div><button type="button" class="release-button" :disabled="!serialConnected" @click="triggerRelease">{{ releaseConfirm ? '再次点击确认投放' : '投放释放' }}</button><small class="release-note">投放会强制停船并通过串口桥接服务下发，属于不可逆动作。</small>
+          <div class="telemetry-line"><span>船头航向</span><strong>{{ headingText }}</strong><span>推进输出</span><strong>{{ propulsionText }}</strong></div>
+          <div class="release-row"><button type="button" class="release-button" :disabled="!serialConnected" @click="triggerRelease">{{ releaseConfirm ? '再次点击确认投放' : '投放释放' }}</button><span class="release-state" :class="{ 'is-sent': releaseSentAt }">{{ releaseSentAt ? '已下发' : '待命' }}</span></div>
+          <small class="release-note">投放会强制停船并通过串口桥接服务下发，属于不可逆动作；舵机拉出插销保持 500 ms 后自动回位。</small>
         </article>
       </section>
     </div>
@@ -70,11 +84,20 @@ import { useCurrentDam } from '../composables/useCurrentDam.js'
 
 globalThis.adapter = adapterPackage?.default ?? adapterPackage
 
+// 与 serial-service / 固件保持一致的量程与超时
+const POOL_SIZE_M = 1.2
+const HEADING_MAX = 359.9
+const TELEMETRY_TIMEOUT_MS = 1500
+const RELEASE_STATUS_MS = 6000
+
 const serviceStatus = ref('closed')
 const serialConnected = ref(false)
 const ports = ref([])
 const selectedPort = ref('')
 const telemetry = ref(null)
+const telemetryStale = ref(false)
+// 是否已经收到过至少一帧遥测：用来区分"刚连上还没出数据"和"运行中断了"
+const telemetrySeen = ref(false)
 const serviceError = ref('')
 const boatDevice = ref(null)
 const boatDeviceLoading = ref(true)
@@ -82,17 +105,23 @@ const boatDeviceError = ref('')
 const { selectedDamId, loadDams } = useCurrentDam()
 const controlMode = ref('manual')
 const armed = ref(false)
+const power = ref(55)
 const pressed = reactive({ forward: false, reverse: false, left: false, right: false })
 const navigation = reactive({ boatX: '', boatY: '', heading: '', targetX: '', targetY: '' })
+// 视觉通道：locator.py 通过本地服务接管时，页面必须看得见谁在控制船
+const vision = reactive({ gate: true, active: false, ageMs: null, navigation: null })
 const boatVideo = ref(null)
 const streamViewport = ref(null)
 const videoState = ref('idle')
 const janus = ref(null)
 const streamHandle = ref(null)
 const releaseConfirm = ref(false)
+const releaseSentAt = ref(null)
 let releaseTimer
+let releaseStatusTimer
 let commandTimer
 let streamTimer
+let telemetryTimer
 let boatDeviceRequest = 0
 let boatService
 
@@ -102,21 +131,86 @@ const missionLabel = computed(() => {
   if (!armed.value) return '待命'
   return controlMode.value === 'manual' ? '手动控制' : '自主航行'
 })
+const visionLabel = computed(() => (vision.active ? '视觉接管中' : vision.gate ? '视觉待机' : '视觉已屏蔽'))
+const visionAgeText = computed(() => {
+  // 服务端会保留最后一条视觉坐标；超过 5 秒没更新就认为没在推送，别显示一个越来越大的毫秒数
+  if (!vision.active && (vision.ageMs === null || vision.ageMs > 5000)) return '视觉未推送'
+  return Number.isFinite(vision.ageMs) ? `视觉数据 ${Math.round(vision.ageMs)} ms 前` : '视觉未推送'
+})
+const visionNavText = computed(() => {
+  const nav = vision.navigation
+  if (!nav) return '—'
+  const fmt = (value) => (Number.isFinite(Number(value)) ? Number(value).toFixed(2) : '—')
+  return `船 (${fmt(nav.boatX)}, ${fmt(nav.boatY)}) → 目标 (${fmt(nav.targetX)}, ${fmt(nav.targetY)})`
+})
 const videoStateText = computed(() => ({ idle: '船载画面待接入', connecting: '正在建立 WebRTC 连接', live: '船载画面实时中', error: '视频连接异常' }[videoState.value]))
 const headingText = computed(() => {
   const value = telemetry.value?.heading
   return Number.isFinite(value) && value >= 0 && value <= 360 ? `${Math.round(value).toString().padStart(3, '0')}°` : '---°'
 })
 const propulsionText = computed(() => telemetry.value ? `${Math.round((Math.abs(telemetry.value.leftMotor || 0) + Math.abs(telemetry.value.rightMotor || 0)) / 4)}%` : '—')
+const commText = computed(() => {
+  if (telemetryStale.value) return telemetrySeen.value ? '中断' : '无数据'
+  return serialConnected.value ? '稳定' : '离线'
+})
+const targetDistanceText = computed(() => {
+  const detected = telemetry.value?.targetDetected
+  const distance = Number(telemetry.value?.distance)
+  return detected && Number.isFinite(distance) ? `${distance.toFixed(2)} m` : '—'
+})
+
+/** 每收到一帧遥测就重置看门狗；超时后自动锁定网页动力并提示。 */
+function markTelemetry() {
+  telemetryStale.value = false
+  window.clearTimeout(telemetryTimer)
+  telemetryTimer = window.setTimeout(() => {
+    telemetryStale.value = true
+    // 只提示、不自动解除解锁：船端本身有 3s 通信超时保护会自行停车，
+    // 网页端强行 lock 会让"有串口、暂时收不到遥测"的台架调试没法进行。
+    serviceError.value = telemetrySeen.value
+      ? '遥测中断：1.5 秒没收到船端数据（桥接板/船端可能断电或超出射频范围）。船端会在 3 秒无指令后自行停车；请检查桥接板供电与射频距离'
+      : '船端无遥测：串口已连但 1.5 秒内没有数据。请确认桥接板已上电、船端已开机，且两者在同一信道'
+  }, TELEMETRY_TIMEOUT_MS)
+}
+
+function clearTelemetryWatch() {
+  window.clearTimeout(telemetryTimer)
+  telemetryTimer = undefined
+  telemetryStale.value = false
+}
+
+function applyVisionState(payload) {
+  if (!payload) return
+  if (typeof payload.gate === 'boolean') vision.gate = payload.gate
+  if (typeof payload.active === 'boolean') vision.active = payload.active
+  if ('ageMs' in payload) vision.ageMs = payload.ageMs
+  if ('navigation' in payload) vision.navigation = payload.navigation
+}
 
 function handleMessage(message) {
   if (message.type === 'connection') {
     serialConnected.value = Boolean(message.connected)
     if (message.port) selectedPort.value = message.port
-    if (!serialConnected.value) stopDrive()
-  } else if (message.type === 'telemetry') telemetry.value = message.telemetry
-  else if (message.type === 'error') serviceError.value = message.message || '无人艇服务异常'
-  else if (message.type === 'release') releaseConfirm.value = false
+    applyVisionState(message.vision)
+    if (serialConnected.value) {
+      // 刚连上：先给 1.5s 等第一帧，期间不计入"超时"
+      telemetrySeen.value = false
+      markTelemetry()
+    } else { clearTelemetryWatch(); telemetrySeen.value = false; stopDrive(false) }
+  } else if (message.type === 'telemetry') {
+    telemetry.value = message.telemetry
+    telemetrySeen.value = true
+    markTelemetry()
+  } else if (message.type === 'vision') {
+    applyVisionState(message)
+  } else if (message.type === 'error') {
+    serviceError.value = message.message || '无人艇服务异常'
+  } else if (message.type === 'release') {
+    releaseConfirm.value = false
+    releaseSentAt.value = Date.now()
+    window.clearTimeout(releaseStatusTimer)
+    releaseStatusTimer = window.setTimeout(() => { releaseSentAt.value = null }, RELEASE_STATUS_MS)
+  }
 }
 
 async function refreshPorts() {
@@ -136,52 +230,164 @@ async function connectSerial() {
 }
 
 async function disconnectSerial() {
-  stopDrive()
+  stopDrive(true)
   await boatService.disconnectSerial()
   serialConnected.value = false
 }
 
+function isAllZero(nav) {
+  return [nav.boatX, nav.boatY, nav.targetX, nav.targetY].every((value) => Number(value) === 0)
+}
+
+/** 全部留空 -> null（纯二哈搜救）；填写不完整/越界/全 0 -> undefined（不允许下发） */
 function currentNavigation() {
   const values = Object.values(navigation)
   if (values.every((value) => value === '')) return null
   const numeric = Object.fromEntries(Object.entries(navigation).map(([key, value]) => [key, Number(value)]))
-  const valid = Object.values(numeric).every(Number.isFinite) && [numeric.boatX, numeric.boatY, numeric.targetX, numeric.targetY].every((value) => value >= 0 && value <= 1.2) && numeric.heading >= 0 && numeric.heading < 360
+  const valid = Object.values(numeric).every(Number.isFinite)
+    && !isAllZero(numeric)
+    && [numeric.boatX, numeric.boatY, numeric.targetX, numeric.targetY].every((value) => value >= 0 && value <= POOL_SIZE_M)
+    && numeric.heading >= 0 && numeric.heading <= HEADING_MAX
   return valid ? numeric : undefined
 }
 
 function armDrive() {
   if (!serialConnected.value) return
-  if (controlMode.value === 'autonomous' && currentNavigation() === undefined) { serviceError.value = '坐标请全部留空，或填写完整合法的 X/Y（0–1.2 m）与航向（0–360°）'; return }
-  serviceError.value = ''
+  const nav = currentNavigation()
+  if (controlMode.value === 'autonomous' && nav === undefined) {
+    const allZero = Object.values(navigation).every((value) => value !== '' && Number(value) === 0)
+    serviceError.value = allZero
+      ? '坐标不能全为 0：船端会把全 0 当作“没有定位”并切到二哈搜救。想走搜救请把坐标清空。'
+      : `坐标请全部留空，或填写完整合法的 X/Y（0–${POOL_SIZE_M} m）与航向（0–${HEADING_MAX}°）`
+    return
+  }
   armed.value = true
+  // 没有遥测也允许解锁（台架调试常这么用），但要明确告知：看不到船端反馈
+  serviceError.value = telemetryStale.value
+    ? (telemetrySeen.value
+        ? '已解锁，但遥测中断：看不到船端电机/应急状态，操作请谨慎'
+        : '已解锁，但还没收到船端遥测：看不到电机/应急状态，操作请谨慎')
+    : ''
 }
 
-function stopDrive(lock = true) {
-  Object.keys(pressed).forEach((key) => { pressed[key] = false })
-  if (lock) armed.value = false
+/**
+ * 停止 / 锁定动力。
+ *
+ * lockVision=true 用于明确的急停动作（空格、ESC、急停按钮、锁定动力、断开串口）：
+ * 除了归零网页通道，还会关闭服务端的「视觉接管闸门」——否则 locator.py 在跑时，
+ * 网页发出的 armed:false 会被服务端用强制 armed:true 的视觉帧覆盖，急停按了船还在跑。
+ * 失焦 / 切模式只归零网页通道，不切断正在执行的视觉救援。
+ */
+function stopDrive(lockVision = true) {
+  clearPressed()
+  armed.value = false
   boatService?.sendCommand({ armed: false, mode: 'manual', throttle: 0, steer: 0, navigation: null })
+  if (lockVision) {
+    const sent = boatService?.sendVisionGate(false)
+    if (sent) { vision.gate = false; vision.active = false }
+  }
 }
 
-function changeControlMode(mode) { stopDrive(); controlMode.value = mode; serviceError.value = '' }
-function setDrive(key, value) { if (armed.value && controlMode.value === 'manual') pressed[key] = value }
+function emergencyStop() {
+  stopDrive(true)
+  serviceError.value = '急停已触发：动力输出归零，视觉接管已切断'
+}
+
+function allowVision() {
+  serviceError.value = ''
+  if (boatService?.sendVisionGate(true)) vision.gate = true
+}
+
+function changeControlMode(mode) {
+  stopDrive(false)
+  controlMode.value = mode
+  serviceError.value = ''
+}
+
+function setDrive(key, value) {
+  if (armed.value && controlMode.value === 'manual') pressed[key] = value
+}
+
 function updateCommand() {
   const throttle = (pressed.forward ? 1 : 0) - (pressed.reverse ? 1 : 0)
-  const steer = (pressed.left ? 1 : 0) - (pressed.right ? 1 : 0)
+  // 符号约定与固件/视觉一致：正 steer = 右转（固件 left = throttle + steer）
+  const steer = (pressed.right ? 1 : 0) - (pressed.left ? 1 : 0)
   const nav = controlMode.value === 'autonomous' ? currentNavigation() : null
-  boatService?.sendCommand({ armed: armed.value && nav !== undefined, mode: controlMode.value, throttle: controlMode.value === 'manual' ? throttle * 110 : 0, steer: controlMode.value === 'manual' ? steer * 110 : 0, navigation: nav === undefined ? null : nav })
+  boatService?.sendCommand({
+    armed: armed.value && nav !== undefined,
+    mode: controlMode.value,
+    throttle: controlMode.value === 'manual' ? throttle * power.value * 2 : 0,
+    steer: controlMode.value === 'manual' ? steer * power.value * 2 : 0,
+    navigation: nav === undefined ? null : nav,
+  })
 }
+
 function triggerRelease() {
   if (!serialConnected.value) return
-  if (!releaseConfirm.value) { releaseConfirm.value = true; clearTimeout(releaseTimer); releaseTimer = window.setTimeout(() => { releaseConfirm.value = false }, 3000); return }
-  clearTimeout(releaseTimer); releaseConfirm.value = false; boatService.release()
+  if (!releaseConfirm.value) {
+    releaseConfirm.value = true
+    window.clearTimeout(releaseTimer)
+    releaseTimer = window.setTimeout(() => { releaseConfirm.value = false }, 3000)
+    return
+  }
+  window.clearTimeout(releaseTimer)
+  releaseConfirm.value = false
+  boatService.release()
 }
-function onKeyDown(event) { if (event.key === ' ' || event.key === 'Escape') { event.preventDefault(); stopDrive() }; const map = { w: 'forward', a: 'left', s: 'reverse', d: 'right' }; const key = map[event.key.toLowerCase()]; if (key && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'SELECT') { event.preventDefault(); setDrive(key, true) } }
-function onKeyUp(event) { const map = { w: 'forward', a: 'left', s: 'reverse', d: 'right' }; const key = map[event.key.toLowerCase()]; if (key) setDrive(key, false) }
+
+function isTyping() {
+  return ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)
+}
+
+function onKeyDown(event) {
+  const key = event.key.toLowerCase()
+  // ESC 始终急停；空格只在非输入状态下急停，避免在坐标框里按空格误触发
+  if (event.key === 'Escape' || (event.key === ' ' && !isTyping())) {
+    event.preventDefault()
+    emergencyStop()
+    return
+  }
+  const map = { w: 'forward', a: 'left', s: 'reverse', d: 'right' }
+  if (map[key] && !isTyping()) {
+    event.preventDefault()
+    setDrive(map[key], true)
+  }
+}
+
+function onKeyUp(event) {
+  const map = { w: 'forward', a: 'left', s: 'reverse', d: 'right' }
+  const state = map[event.key.toLowerCase()]
+  if (state) setDrive(state, false)
+}
+
+function clearPressed() {
+  Object.keys(pressed).forEach((key) => { pressed[key] = false })
+}
+
+function onWindowBlur() {
+  // 失焦只停网页通道，不切断视觉救援（要中断请用急停）
+  clearPressed()
+  stopDrive(false)
+}
+
+function onVisibilityChange() {
+  // 切标签页/最小化时 keyup 可能收不到，必须主动清零
+  if (document.visibilityState === 'hidden') {
+    clearPressed()
+    stopDrive(false)
+  }
+}
+
+function onPointerUpAnywhere() {
+  // pointerup 落在按钮外（例如按住后拖出窗口）时，pointerleave 未必触发
+  clearPressed()
+}
+
 function startStream() {
   if (videoState.value === 'connecting' || videoState.value === 'live') return
   videoState.value = 'connecting'
   serviceError.value = ''
-  clearTimeout(streamTimer)
+  window.clearTimeout(streamTimer)
   streamTimer = window.setTimeout(() => {
     if (videoState.value === 'connecting') {
       videoState.value = 'error'
@@ -211,7 +417,7 @@ function startStream() {
         onremotetrack: (track, _mid, on) => {
           if (!on || track.kind !== 'video') return
           if (boatVideo.value) { boatVideo.value.srcObject = new MediaStream([track]); boatVideo.value.play().catch(() => {}) }
-          clearTimeout(streamTimer)
+          window.clearTimeout(streamTimer)
           videoState.value = 'live'
         },
         oncleanup: () => { if (boatVideo.value) boatVideo.value.srcObject = null; videoState.value = 'idle' },
@@ -225,7 +431,7 @@ function startStream() {
 }
 
 function stopStream() {
-  clearTimeout(streamTimer)
+  window.clearTimeout(streamTimer)
   streamHandle.value?.send({ message: { request: 'stop' } })
   janus.value?.destroy()
   janus.value = null
@@ -259,35 +465,32 @@ onMounted(() => {
   void loadBoatDevice()
   boatService = new BoatControlService({ onMessage: handleMessage, onStatus: (status) => { serviceStatus.value = status } })
   boatService.connect()
-  refreshPorts()
+  void refreshPorts()
   commandTimer = window.setInterval(updateCommand, 50)
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
-  window.addEventListener('blur', () => stopDrive())
+  window.addEventListener('blur', onWindowBlur)
+  window.addEventListener('pointerup', onPointerUpAnywhere)
+  window.addEventListener('pointercancel', onPointerUpAnywhere)
+  document.addEventListener('visibilitychange', onVisibilityChange)
 })
-onBeforeUnmount(() => { clearInterval(commandTimer); clearTimeout(releaseTimer); clearTimeout(streamTimer); stopDrive(); stopStream(); boatService?.close(); window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp) })
+
+onBeforeUnmount(() => {
+  window.clearInterval(commandTimer)
+  window.clearTimeout(releaseTimer)
+  window.clearTimeout(releaseStatusTimer)
+  window.clearTimeout(streamTimer)
+  window.clearTimeout(telemetryTimer)
+  stopDrive(false)
+  stopStream()
+  boatService?.close()
+  window.removeEventListener('keydown', onKeyDown)
+  window.removeEventListener('keyup', onKeyUp)
+  window.removeEventListener('blur', onWindowBlur)
+  window.removeEventListener('pointerup', onPointerUpAnywhere)
+  window.removeEventListener('pointercancel', onPointerUpAnywhere)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+})
 </script>
 
-<style scoped>
-.boat-page{display:flex;flex-direction:column;gap:15px;min-width:920px}.boat-hero,.boat-card{border:1px solid #e2ebf3;border-radius:15px;background:#fff;box-shadow:0 8px 22px rgba(31,80,117,.06)}.boat-hero{display:grid;grid-template-columns:.9fr 1.35fr;min-height:285px;overflow:hidden}.boat-hero__copy{padding:32px}.boat-kicker{color:#2589d8;font-size:11px;letter-spacing:.12em}.boat-hero h2{margin:14px 0 6px;color:#173b59;font-size:25px}.boat-device-code{display:block;color:#839aab;font-size:10px}.boat-device-code.is-error{color:#bd5b52}.boat-hero p{max-width:390px;color:#71879b;font-size:13px;line-height:1.8}.boat-status{display:inline-flex;align-items:center;gap:7px;margin-top:30px;padding:8px 12px;border-radius:9px;background:#eafaf4;color:#168b69;font-size:11px}.boat-status.is-offline{background:#f1f4f6;color:#718291}.boat-status i{width:7px;height:7px;border-radius:50%;background:#27c499}.boat-status.is-offline i{background:#9aaab5}.boat-status span{margin-left:5px;color:#71978a}.boat-visual{position:relative;overflow:hidden;background:linear-gradient(155deg,#b8e6e6,#6cc9d3 52%,#247fae)}.boat-visual:before,.boat-visual:after{content:'';position:absolute;inset:20% -10% auto;height:1px;background:rgba(255,255,255,.4);transform:rotate(-18deg);box-shadow:0 35px rgba(255,255,255,.25),0 70px rgba(255,255,255,.2),0 105px rgba(255,255,255,.18)}.boat-visual:after{top:58%;transform:rotate(16deg);opacity:.5}.boat-water{position:absolute;inset:0;background:radial-gradient(ellipse at 65% 35%,rgba(255,255,255,.35),transparent 28%),linear-gradient(135deg,transparent 58%,rgba(20,91,129,.3) 59% 61%,transparent 62%)}.boat-route{position:absolute;left:18%;top:57%;width:58%;height:34%;border:2px dashed rgba(227,255,255,.8);border-left-color:transparent;border-radius:50%;transform:rotate(-12deg)}.boat-model{position:absolute;left:54%;top:45%;display:flex;align-items:center;justify-content:center;width:54px;height:38px;border-radius:50% 50% 45% 45%;background:#f7ffff;color:#1c97be;font-size:22px;box-shadow:0 5px 15px rgba(12,74,103,.3);transform:rotate(-14deg)}.boat-model small{position:absolute;top:42px;color:#fff;font-size:10px;white-space:nowrap}.boat-map-label{position:absolute;padding:5px 8px;border:1px solid rgba(255,255,255,.55);border-radius:6px;background:rgba(8,81,112,.45);color:#fff;font-size:10px}.label-a{left:20%;top:24%}.label-b{right:13%;bottom:20%}.boat-grid,.boat-control-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}.boat-control-grid{grid-template-columns:1.2fr 1fr}.boat-card{padding:18px}.boat-card header{display:flex;align-items:center;justify-content:space-between;margin-bottom:15px}.boat-card h2{margin:0;color:#1c405d;font-size:14px}.boat-card header small,.fresh-text{color:#91a2b0;font-size:10px}.badge{padding:4px 8px;border-radius:9px;font-size:9px}.badge-blue{color:#247ec8;background:#eaf5ff}.badge-green{color:#168b69;background:#e9faf3}.badge-gray{color:#7a8d9d;background:#edf2f5}.boat-card dl{display:grid;grid-template-columns:1fr 1fr;gap:15px 12px}.boat-card dt{color:#94a6b4;font-size:10px}.boat-card dd{margin:4px 0 0;color:#3b607a;font-size:14px;font-weight:650}.boat-checks{display:flex;flex-direction:column;gap:12px;margin:0;padding:0;list-style:none;color:#607b90;font-size:11px}.boat-checks li{display:flex;align-items:center;gap:8px}.boat-checks i{width:7px;height:7px;border-radius:50%;background:#27c499}.boat-checks i.warn{background:#e5a73f}.boat-checks b{margin-left:auto;color:#1a9c77;font-size:10px;font-weight:500}.boat-checks b.warn{color:#c68a2f}.serial-row{display:flex;gap:7px;margin-bottom:10px}.serial-row select{min-width:0;flex:1;height:31px;padding:0 8px;border:1px solid #dbe7ef;border-radius:7px;background:#fbfdfe;color:#5a7388;font-size:10px}.minor-button,.primary-button,.secondary-button,.arm-button,.release-button{border:0;border-radius:7px;font-size:10px;cursor:pointer}.minor-button{padding:0 10px;border:1px solid #d8e7f0;background:#f6fbfd;color:#3d89b4}.primary-button,.secondary-button{width:100%;height:31px}.primary-button,.arm-button.armed{background:#1686dc;color:#fff}.secondary-button{border:1px solid #d6e4ec;background:#fff;color:#607b90}.primary-button:disabled,.arm-button:disabled,.release-button:disabled{cursor:not-allowed;opacity:.55}.card-note{margin:11px 0 0;color:#93a5b3;font-size:9px;line-height:1.5}.mode-switch{display:flex;gap:6px;margin-bottom:13px}.mode-switch button{flex:1;height:29px;border:1px solid #dbe8ef;border-radius:7px;background:#f8fbfd;color:#71889b;font-size:10px;cursor:pointer}.mode-switch button.selected{border-color:#afd6ef;background:#eaf6fd;color:#1e83c5}.keypad{display:grid;grid-template-columns:repeat(3,44px);justify-content:center;gap:6px;margin:4px 0 13px}.keypad button{height:38px;border:1px solid #d6e7f0;border-radius:8px;background:#f7fbfd;color:#42738f;font-size:12px;cursor:pointer}.keypad button.active{border-color:#28a8e8;background:#e5f6ff;color:#1b87be;box-shadow:0 0 0 3px rgba(44,164,225,.12)}.navigation-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:12px}.navigation-grid label{color:#7e94a5;font-size:9px}.navigation-grid input{display:block;width:100%;height:27px;margin-top:4px;padding:0 6px;border:1px solid #dbe7ef;border-radius:6px;color:#41657b;font-size:10px}.navigation-grid p{grid-column:1/-1;margin:3px 0 0;color:#94a5b2;font-size:9px;line-height:1.5}.control-footer{display:flex;align-items:center;gap:9px}.control-footer>span{display:flex;align-items:center;gap:6px;color:#7f95a5;font-size:10px}.control-footer i{width:7px;height:7px;border-radius:50%;background:#a7b7c1}.control-footer i.on{background:#26c79a}.arm-button{margin-left:auto;height:31px;padding:0 14px;background:#edf3f6;color:#648096}.telemetry-card{min-height:210px}.telemetry-line{display:grid;grid-template-columns:auto 1fr auto 1fr;gap:5px 8px;align-items:center;margin-top:13px;color:#8da0ae;font-size:10px}.telemetry-line strong{color:#37627d;font-size:11px}.release-button{width:100%;height:30px;margin-top:14px;border:1px solid #f0c8be;background:#fff5f1;color:#bd5b45}.release-button:disabled{color:#aab8c0;background:#f7fafb;border-color:#e4edf2}.release-note{display:block;margin-top:8px;color:#9aaab5;font-size:9px;line-height:1.5}.boat-error{margin:0;padding:8px 12px;border:1px solid #f0d2cc;border-radius:8px;background:#fff6f3;color:#bd5b45;font-size:11px}@media(max-width:1200px){.boat-hero{grid-template-columns:1fr}.boat-visual{min-height:230px}.boat-grid,.boat-control-grid{grid-template-columns:1fr 1fr}.boat-card:last-child{grid-column:1/span 2}}
-/* 船载视角：Janus WebRTC 主画面 */
-.boat-stream-card{min-height:0}.boat-stream-card header{margin-bottom:10px}.boat-stream-card header>div{display:flex;flex-direction:column;gap:3px}.boat-stream-card header small{color:#9aabba;font-size:9px}.fresh-text.stream-live{color:#1b9e76}.fresh-text.stream-connecting{color:#2b8fca}.fresh-text.stream-error{color:#c16b52}.boat-stream-viewport{position:relative;min-height:238px;overflow:hidden;border-radius:10px;background:#071a2e;box-shadow:inset 0 0 0 1px rgba(116,190,230,.18)}.boat-stream-video{display:block;width:100%;height:238px;object-fit:cover;background:#071a2e}.boat-stream-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#bfd1de;text-align:center;background:radial-gradient(circle at center,rgba(21,116,156,.24),rgba(4,21,39,.94) 64%)}.boat-stream-empty strong{font-size:13px;font-weight:600}.boat-stream-empty small{color:#7d9bae;font-size:9px}.stream-radar{position:relative;width:56px;height:56px;border:1px solid rgba(97,205,222,.45);border-radius:50%;background:repeating-radial-gradient(circle,transparent 0 12px,rgba(84,192,215,.18) 13px 14px)}.stream-radar:before{content:'';position:absolute;left:50%;top:5px;bottom:5px;width:1px;background:rgba(118,225,232,.42)}.stream-radar:after{content:'';position:absolute;top:50%;left:5px;right:5px;height:1px;background:rgba(118,225,232,.42)}.stream-radar span{position:absolute;left:50%;top:50%;width:6px;height:6px;border-radius:50%;background:#48d7cf;transform:translate(-50%,-50%);box-shadow:0 0 0 7px rgba(72,215,207,.12)}.stream-radar i{position:absolute;width:4px;height:4px;border-radius:50%;background:#42cbe0}.stream-radar i:first-child{left:14px;top:16px}.stream-radar i:nth-child(2){right:12px;bottom:14px}.stream-connect-button{height:31px;padding:0 14px;border:1px solid rgba(95,203,224,.45);border-radius:7px;background:rgba(23,138,174,.35);color:#d8fbff;font-size:10px;cursor:pointer}.stream-connect-button:disabled{cursor:not-allowed;opacity:.55}.stream-overlay,.stream-bottom{position:absolute;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:9px 11px;color:#d6eef4;font-size:9px;background:linear-gradient(180deg,rgba(2,17,32,.7),transparent)}.stream-overlay{top:0}.stream-overlay>span:first-child{display:flex;align-items:center;gap:5px}.stream-overlay i{width:6px;height:6px;border-radius:50%;background:#95a8b4}.stream-overlay i.online{background:#37d3a2;box-shadow:0 0 0 3px rgba(55,211,162,.14)}.stream-overlay>span:last-child{color:#9ab4c4}.stream-bottom{bottom:0;background:linear-gradient(0deg,rgba(2,17,32,.78),transparent);color:#a8c5d0}.stream-bottom>div{display:flex;gap:7px}.stream-bottom button{border:1px solid rgba(188,229,238,.3);border-radius:5px;background:rgba(4,25,42,.48);color:#d4edf2;font-size:9px;padding:4px 7px;cursor:pointer}
-</style>
-<style scoped>
-@media(max-width:900px){
-  .boat-page{min-width:0;gap:10px}
-  .boat-hero{grid-template-columns:1fr;min-height:0}
-  .boat-hero__copy{padding:20px}
-  .boat-hero h2{font-size:20px;margin-top:8px}
-  .boat-hero p{font-size:12px}
-  .boat-status{margin-top:16px;flex-wrap:wrap}
-  .boat-visual{min-height:200px}
-  .boat-grid,.boat-control-grid{grid-template-columns:1fr;gap:10px}
-  .boat-card:last-child{grid-column:auto}
-  .boat-card{padding:14px}
-  .boat-card dl{grid-template-columns:1fr 1fr;gap:12px 8px}
-  .keypad{grid-template-columns:repeat(3,minmax(0,1fr))}
-  .boat-stream-card header{flex-wrap:wrap;gap:6px}
-  .boat-stream-video,.boat-stream-viewport{min-height:210px;height:210px}
-}
-</style>
+<style scoped src="./BoatView.css"></style>

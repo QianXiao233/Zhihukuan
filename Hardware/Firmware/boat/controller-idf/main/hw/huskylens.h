@@ -17,9 +17,15 @@
  *
  * 用法（与 Arduino 版一致）：
  *   1. huskylens_begin()           握手（KNOCK）
- *   2. huskylens_switch_algorithm(ALGO_OBJECT_TRACKING)
- *   3. 主循环：huskylens_get_result() 拉取；再用 huskylens_block_count() /
- *      huskylens_get_block() 取结果
+ *   2. huskylens_switch_algorithm(HUSKY_ALGORITHM_ID)
+ *   3. 主循环：huskylens_get_result(HUSKY_ALGORITHM_ID) 拉取；再用
+ *      huskylens_block_count() / huskylens_get_block() 取结果
+ *
+ * 算法 ID：协议帧里的 AlgoID 只是**一个字节**，内置算法占 1~19，而部署到设备上的
+ * 自定义模型由设备分配更大的 ID（常见 128+，例如 131）。所以本驱动的算法参数
+ * 统一用 uint8_t 而不是枚举，枚举常量（如 ALGO_OBJECT_TRACKING）仍可隐式转换，
+ * 传自定义 ID 时直接写数字即可。具体用哪个 ID 由 HUSKY_ALGORITHM_ID 配置
+ *（见 shared/boat_controller_config.h）。
  */
 #pragma once
 
@@ -35,7 +41,11 @@
 #define HUSKY_CMD_RETURN_BLOCKS    0x1C
 #define HUSKY_CMD_RETURN_ARROWS    0x1D
 
-/* 算法 ID（来自协议文档"算法ID"表） */
+/* 算法 ID（来自协议文档"算法ID"表）
+ *
+ * 注意：这只是内置算法的**命名常量表**，不是可用 ID 的全集。
+ * 自定义模型的算法 ID（如 131）不在枚举里，直接以数字传给下面的 API 即可 ——
+ * 因此 API 的参数类型是 uint8_t，而不是本枚举。 */
 typedef enum {
     ALGO_ANY                  = 0,
     ALGO_FACE_RECOGNITION     = 1,
@@ -75,15 +85,32 @@ typedef struct {
  */
 bool huskylens_begin(void);
 
-/** @brief 切换算法，成功后内部记录当前算法 */
-bool huskylens_switch_algorithm(husky_algorithm_t algo);
+/**
+ * @brief 切换算法，成功后内部记录当前算法
+ * @param algo 算法 ID（0~255）。内置算法可用 ALGO_xxx 枚举常量，自定义模型传设备
+ *             屏幕上显示的 ID（如 131）
+ */
+bool huskylens_switch_algorithm(uint8_t algo);
+
+/**
+ * @brief 扫描"用户安装模型"的算法 ID（协议规定 128~255 为用户模型段）
+ *
+ * 依据官方协议：SET_ALGORITHM 会回 RETURN_ARGS(retValue=0 成功)，所以可以逐个
+ * 尝试并靠返回值判断该 ID 是否存在。用于"装好自定义模型但懒得去设备 UI 抄 ID"的场合，
+ * HUSKY_ALGORITHM_ID 设为 0 时 main.c 会在开机时调用本函数。
+ *
+ * @param first/last 扫描区间（建议 128~255）
+ * @param budget_ms  总预算；超时立即返回，避免开机卡太久
+ * @return 找到的算法 ID；没找到返回 0
+ */
+uint8_t huskylens_find_user_algorithm(uint8_t first, uint8_t last, uint32_t budget_ms);
 
 /**
  * @brief 拉取一次结果（发送 GET_RESULT 并解析返回的帧序列）
- * @param algo 期望的算法 ID
+ * @param algo 期望的算法 ID（0~255），应与已切换的算法一致
  * @return true 表示收到有效的 RETURN_INFO/block 响应
  */
-bool huskylens_get_result(husky_algorithm_t algo);
+bool huskylens_get_result(uint8_t algo);
 
 /** @brief 最近一次结果中的块数量 */
 int huskylens_block_count(void);

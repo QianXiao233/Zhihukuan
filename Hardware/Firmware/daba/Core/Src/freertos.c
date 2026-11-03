@@ -34,9 +34,11 @@
 #include "modbus.h"
 #include "mqtt_app.h"
 #include "devices.h"
+#include "fw_version.h"
 #include "touch.h"
 #include "lwip/netif.h"
 #include "lwip/ip_addr.h"
+#include "ethernetif.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -175,6 +177,10 @@ void Heartbeat_Task(void *argument)
 
     /* 喂狗 — 如果系统卡死，IWDG 3秒后自动复位 */
     IWDG->KR = 0xAAAA;
+
+    /* 网络看门狗：链路长时间断开、或链路 UP 但网络长时间不通 → 整机自动复位。
+       放在心跳任务里，即使 MQTT/网络任务卡死也仍然有效。 */
+    MQTT_NetWatchdogTick();
 
     osDelay(500);                 // 500ms 闪一次
   }
@@ -365,15 +371,37 @@ void LCD_Update_Task(void *argument)
     LCD_ShowChinese(4, 4, (u8*)"\xD6\xC7\xD3\xF9\xB0\xB2\xC0\xBC", POINT_COLOR);
     LCD_ShowString(68, 4, 60, 20, 16, (u8*)"RTU");
     LCD_ShowChinese(104, 4, (u8*)"\xB2\xC9\xBC\xAF\xD6\xD5\xB6\xCB", POINT_COLOR);
+
+    /* 固件版本号（标题栏右侧，灰色小字，例如 "ver 1.0"） */
+    {
+        uint16_t vw = (uint16_t)(8U * strlen(FW_VERSION_STR));   /* 16 号字宽 8px/字符 */
+        POINT_COLOR = GRAY;
+        LCD_ShowString((u16)(lcddev.width - 4U - vw), 6, (u16)(vw + 2U), 16, 16,
+                       (u8*)FW_VERSION_STR);
+    }
     
     /* 分隔线 */
     POINT_COLOR = GRAY;
     LCD_DrawLine(0, 24, lcddev.width - 1, 24);
     
-    /* MQTT 连接状态 */
+    /* MQTT 连接状态；断开时附带连接统计 C:成功/尝试，便于确认是否在自动重连 */
     POINT_COLOR = (g_lcd_state.tcp_connected) ? GREEN : RED;
-    snprintf(line, sizeof(line), "MQTT Server: %s",
-             g_lcd_state.tcp_connected ? g_lcd_state.client_ip : "Disconnected");
+    if (g_lcd_state.tcp_connected) {
+        snprintf(line, sizeof(line), "MQTT Server: %s", g_lcd_state.client_ip);
+    } else {
+        uint32_t conn_ok = 0;
+        uint32_t conn_try = 0;
+        uint32_t tx_tries = 0;
+        uint32_t tx_ok = 0;
+        uint32_t rx_pkts = 0;
+        MQTT_GetConnectStats(&conn_ok, &conn_try);
+        ethernetif_get_pkt_stats(&tx_tries, &tx_ok, &rx_pkts);
+        /* D=断开, C:连接成功/尝试, T:发送成功/尝试, R:收到帧数 */
+        snprintf(line, sizeof(line), "D C:%lu/%lu T:%lu/%lu R:%lu",
+                 (unsigned long)conn_ok, (unsigned long)conn_try,
+                 (unsigned long)tx_ok, (unsigned long)tx_tries,
+                 (unsigned long)rx_pkts);
+    }
     LCD_ShowString(4, 28, 300, 16, 16, (u8*)line);
     
     /* 分隔线 */
@@ -462,18 +490,24 @@ void LCD_Update_Task(void *argument)
         char gw_str[16];
         char broker_ip[16];
         uint16_t broker_port = 0;
-        int ip_valid = net_ip_is_valid();
+        int link_up = netif_is_link_up(&gnetif);
+        /* 注意：lwIP 掉链后不会清 IP（保留租约），所以“IP 有值”不等于在线。
+           显示上必须以链路状态为准，否则断网了还显示旧 IP，容易被误判为正常。 */
+        int ip_valid = link_up && net_ip_is_valid();
 
         net_get_ip_str(ip_str, sizeof(ip_str));
         net_get_gw_str(gw_str, sizeof(gw_str));
 
-        /* DHCP 分配到的 IPv4 地址：24 号大字，未分配时灰色 */
+        /* DHCP 分配到的 IPv4 地址：24 号大字；断开或未分配时显示 -- 并置灰 */
         POINT_COLOR = ip_valid ? BLUE : GRAY;
-        snprintf(line, sizeof(line), "IP:%s", ip_str);
+        snprintf(line, sizeof(line), "IP:%s", ip_valid ? ip_str : "--");
         LCD_ShowString(4, 352, 300, 24, 24, (u8*)line);
 
-        /* DHCP 状态 + 网关 */
-        if (ip_valid) {
+        /* 网络状态：断链 / 等 DHCP / 正常 */
+        if (!link_up) {
+            POINT_COLOR = RED;
+            snprintf(line, sizeof(line), "LINK DOWN - no network");
+        } else if (ip_valid) {
             POINT_COLOR = GRAY;
             snprintf(line, sizeof(line), "DHCP OK  GW:%s", gw_str);
         } else {
@@ -492,16 +526,34 @@ void LCD_Update_Task(void *argument)
         {
             int disc_reason = 0;
             uint32_t disc_cnt = 0;
+            uint32_t link_downs = 0;
+            uint32_t link_recovers = 0;
+            uint32_t phy_resets = 0;
+            uint32_t link_mbps = 0;
+            uint8_t  link_full_duplex = 0;
             const LCD_DiagView_t *dv = LCD_Diag_View();
 
             MQTT_GetStats(&disc_reason, &disc_cnt);
+            ethernetif_get_link_stats(&link_downs, &link_recovers, &phy_resets);
+            ethernetif_get_link_mode(&link_mbps, &link_full_duplex);
 
             POINT_COLOR = GRAY;
-            snprintf(line, sizeof(line), "RST:%s  LINK:%s",
-                     reset_cause_str(), netif_is_link_up(&gnetif) ? "UP" : "DOWN");
+            /* 末尾 100MF/10MH = MAC 实际配置的速率与双工（F 全双工 / H 半双工） */
+            snprintf(line, sizeof(line), "RST:%s LINK:%s D:%lu R:%lu P:%lu %luM%c",
+                     reset_cause_str(),
+                     netif_is_link_up(&gnetif) ? "UP" : "DOWN",
+                     (unsigned long)link_downs,
+                     (unsigned long)link_recovers,
+                     (unsigned long)phy_resets,
+                     (unsigned long)link_mbps,
+                     link_full_duplex ? 'F' : 'H');
             LCD_ShowString(4, 418, 300, 16, 16, (u8*)line);
 
-            if (dv->ovf_count > 0) {
+            if (dv->net_reset) {
+                POINT_COLOR = RED;
+                snprintf(line, sizeof(line), "NETRST STG:%lu",
+                         (unsigned long)dv->crash_stage);
+            } else if (dv->ovf_count > 0) {
                 /* 上次运行发生过栈溢出（若为强电干扰导致的误报，会显示这里的任务名） */
                 POINT_COLOR = RED;
                 snprintf(line, sizeof(line), "OVF:%s STG:%lu",
@@ -512,8 +564,11 @@ void LCD_Update_Task(void *argument)
                          (unsigned long)dv->crash_stage);
             } else {
                 POINT_COLOR = g_lcd_state.tcp_connected ? GRAY : RED;
-                snprintf(line, sizeof(line), "MQTT err:%d dn:%lu",
-                         disc_reason, (unsigned long)disc_cnt);
+                /* e = 最近一次连接结果（0 成功 / -4 无路由 / 1002 握手超时）
+                   r = 最近一次断开原因   n = 断连次数 */
+                snprintf(line, sizeof(line), "e:%d r:%d n:%lu",
+                         MQTT_GetLastConnErr(), disc_reason,
+                         (unsigned long)disc_cnt);
             }
             LCD_ShowString(4, 436, 300, 16, 16, (u8*)line);
         }

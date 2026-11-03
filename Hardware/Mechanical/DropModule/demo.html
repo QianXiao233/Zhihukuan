@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>投放模块 · 交互演示</title>
+<style>
+  :root{
+    --bg:#0e1116; --card:#171d25; --line:#2a3441;
+    --txt:#e6edf3; --dim:#8b98a8; --dim2:#5f6c7d;
+    --blue:#3b8fe8; --cyan:#7cc0ff; --orange:#e8952e;
+    --grey:#98a0ab; --light:#c6cdd8; --red:#e0574a;
+    --ok:#3fb950; --warn:#d29922; --bad:#f85149; --water:#1b3a4b;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:radial-gradient(1200px 600px at 20% -10%,#1b2530 0%,transparent 60%),var(--bg);
+    color:var(--txt);font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+    line-height:1.65;-webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:40px 24px 80px}
+  header{margin-bottom:36px}
+  .kicker{color:var(--blue);font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:600}
+  h1{font-size:34px;margin:8px 0 10px;letter-spacing:-.01em;font-weight:650}
+  .sub{color:var(--dim);font-size:15.5px;max-width:780px}
+
+  .card{background:linear-gradient(180deg,#1b222b 0%,#171d25 100%);
+    border:1px solid var(--line);border-radius:14px;padding:26px 28px;margin-bottom:22px}
+  h2{font-size:19px;margin:0 0 4px;font-weight:640}
+  h2 .n{display:inline-flex;align-items:center;justify-content:center;
+    width:24px;height:24px;border-radius:7px;background:#22303f;color:var(--blue);
+    font-size:13px;margin-right:10px;font-weight:700;vertical-align:2px}
+  .lead{color:var(--dim);font-size:14.5px;margin:0 0 20px}
+
+  .stage{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:900px){.stage{grid-template-columns:1fr}}
+  .pane{background:#0b0f14;border:1px solid var(--line);border-radius:11px;
+    padding:10px;position:relative;overflow:hidden}
+  .pane .tag{position:absolute;top:10px;left:12px;font-size:11.5px;color:var(--dim2);
+    letter-spacing:.08em;text-transform:uppercase;font-weight:600;z-index:2}
+  .pane svg{display:block;width:100%;height:auto}
+
+  .controls{display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+    margin-top:18px;padding-top:18px;border-top:1px solid var(--line)}
+  .btn{appearance:none;border:1px solid #2e3d4e;background:#222d3a;color:var(--txt);
+    padding:9px 18px;border-radius:9px;font-size:14px;font-weight:600;cursor:pointer;
+    transition:.16s;font-family:inherit}
+  .btn:hover{background:#2b394a;border-color:#3d5065}
+  .btn.primary{background:linear-gradient(180deg,#2f7fd4,#2568b0);border-color:#3b8fe8;color:#fff}
+  .btn.primary:hover{background:linear-gradient(180deg,#3b8fe8,#2a76c4)}
+
+  .slider-box{display:flex;align-items:center;gap:12px;flex:1;min-width:250px}
+  .slider-box label{font-size:13px;color:var(--dim);white-space:nowrap}
+  input[type=range]{-webkit-appearance:none;appearance:none;flex:1;height:4px;
+    border-radius:3px;background:#2b3644;outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;
+    border-radius:50%;background:var(--blue);cursor:pointer;border:2px solid #0b0f14}
+  .val{font-variant-numeric:tabular-nums;font-size:13px;width:46px;text-align:right}
+
+  .status{display:inline-flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;
+    padding:5px 13px;border-radius:20px;border:1px solid}
+  .status.locked{color:var(--ok);border-color:#24532f;background:#132218}
+  .status.moving{color:var(--warn);border-color:#4a3a12;background:#221c0d}
+  .status.out{color:var(--blue);border-color:#1b3d63;background:#0f1e2e}
+  .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+
+  .explain{margin-top:16px;padding:14px 16px;border-left:3px solid var(--blue);
+    background:#131a22;border-radius:0 9px 9px 0;font-size:14px;color:#c3cdd8;min-height:62px}
+  .explain b{color:#fff;font-weight:600}
+
+  .legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;font-size:12.5px;color:var(--dim)}
+  .legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}}
+
+  table{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--dim);font-weight:600;font-size:12.5px;letter-spacing:.04em;text-transform:uppercase}
+  tr:last-child td{border-bottom:none}
+  td code,p code,li code{background:#0d1319;border:1px solid #232e3a;padding:1.5px 6px;
+    border-radius:5px;font-family:ui-monospace,"Cascadia Code",Consolas,monospace;
+    font-size:12.8px;color:#9fd0ff}
+
+  .steps{counter-reset:s;margin:0;padding:0;list-style:none}
+  .steps li{position:relative;padding:0 0 22px 44px;border-left:2px solid #232e3a}
+  .steps li:last-child{border-left-color:transparent;padding-bottom:0}
+  .steps li::before{counter-increment:s;content:counter(s);position:absolute;left:-13px;top:-2px;
+    width:24px;height:24px;border-radius:50%;background:#1b2430;border:1px solid #31404f;
+    color:var(--dim);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+  .steps strong{display:block;font-size:15px;margin-bottom:3px;font-weight:620}
+  .steps .note{color:var(--dim);font-size:13.5px}
+  .why{margin-top:8px;padding:10px 13px;background:#12181f;border-radius:8px;
+    font-size:13px;color:#9fabbb;border-left:2px solid var(--warn)}
+  .why b{color:var(--warn)}
+
+  .check{display:flex;align-items:flex-start;gap:11px;padding:11px 0;
+    border-bottom:1px solid #1e2833;cursor:pointer;user-select:none}
+  .check:last-child{border-bottom:none}
+  .check input{appearance:none;width:19px;height:19px;border:1.5px solid #3a4756;
+    border-radius:5px;margin:2px 0 0;flex:0 0 auto;cursor:pointer;position:relative;transition:.15s}
+  .check input:checked{background:var(--ok);border-color:var(--ok)}
+  .check input:checked::after{content:"";position:absolute;left:6px;top:2px;width:5px;height:10px;
+    border:solid #0b0f14;border-width:0 2px 2px 0;transform:rotate(45deg)}
+  .check span{font-size:14px;color:#c3cdd8}
+  .check input:checked + span{color:var(--dim);text-decoration:line-through}
+
+  .warnbox{background:#1d1508;border:1px solid #4a3a12;border-radius:10px;
+    padding:14px 16px;font-size:13.8px;color:#e3d3b0;margin-top:14px}
+  .warnbox b{color:var(--warn)}
+  .infobox{background:#0d1a26;border:1px solid #1e3a52;border-radius:10px;
+    padding:14px 16px;font-size:13.8px;color:#b6cfe2;margin-top:14px}
+  .infobox b{color:var(--blue)}
+  .badbox{background:#1d0f10;border:1px solid #4a1f22;border-radius:10px;
+    padding:14px 16px;font-size:13.8px;color:#e3b0b0;margin-top:14px}
+  .badbox b{color:var(--bad)}
+
+  .tagx{color:var(--bad);font-weight:600}
+  .tago{color:var(--ok);font-weight:600}
+  footer{margin-top:44px;padding-top:22px;border-top:1px solid var(--line);
+    color:var(--dim2);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="kicker">MG90S · 倒扣销锁扣</div>
+  <h1>投放模块 · 交互演示</h1>
+  <p class="sub">
+    舵机不是在"拉插销"，而是在"让开位置"。销轴卡在托板耳板的开口缺口里，
+    顶上压着一个倒扣圆盘 —— 托板既不能往前翻，也不能往上滑脱。
+    舵机转 90° 把销轴摆出缺口，托板就靠载荷自重前翻，救生圈落进水里。
+    下面可以拖动角度、点投放，看这个动作怎么发生。
+  </p>
+</header>
+
+<!-- ================= 1. 演示 ================= -->
+<section class="card">
+  <h2><span class="n">1</span>看它怎么动</h2>
+  <p class="lead">
+    左边俯视（从上往下看销轴怎么退出缺口），右边侧视（看托板怎么翻下去、圆盘怎么挡住）。
+    两个视图联动。
+  </p>
+
+  <div class="stage">
+    <div class="pane">
+      <div class="tag">俯视图 · XY</div>
+      <svg id="topSvg"></svg>
+    </div>
+    <div class="pane">
+      <div class="tag">侧视图 · YZ</div>
+      <svg id="sideSvg"></svg>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><i style="background:var(--grey)"></i>支架 / 舵机</span>
+    <span><i style="background:var(--blue)"></i>摇臂</span>
+    <span><i style="background:var(--cyan)"></i>销轴 + 倒扣圆盘</span>
+    <span><i style="background:var(--orange)"></i>托板耳板（开口缺口）</span>
+    <span><i style="background:var(--light)"></i>托板</span>
+    <span><i style="background:var(--red)"></i>载荷（救生圈）</span>
+  </div>
+
+  <div class="controls">
+    <button class="btn primary" id="btnDrop">投放</button>
+    <button class="btn" id="btnReload">装填复位</button>
+    <div class="slider-box">
+      <label for="slider">舵机角度</label>
+      <input type="range" id="slider" min="0" max="90" value="0" step="1">
+      <span class="val" id="angleVal">0°</span>
+    </div>
+    <span class="status locked" id="status"><i class="dot"></i><span id="statusTxt">锁定</span></span>
+  </div>
+
+  <div class="explain" id="explain">
+    现在是<b>锁定位</b>：销轴柱段卡在耳板的开口缺口里，顶上的倒扣圆盘压住耳板顶面。
+    托板往前翻会被销轴挡住，往上抬会被圆盘挡住 —— 两个方向都锁死。
+  </div>
+</section>
+
+<!-- ================= 2. 为什么这样做 ================= -->
+<section class="card">
+  <h2><span class="n">2</span>为什么不是一开始想的那个做法</h2>
+  <p class="lead">这版之前有两轮设计，都是在几何扫描时才发现不可行。记下来，免得以后重走。</p>
+
+  <table>
+    <tr><th style="width:120px">版本</th><th>做法</th><th>怎么失败的</th></tr>
+    <tr>
+      <td>v1</td>
+      <td>摆臂挂钩，舵机挡块压住摆臂内侧</td>
+      <td class="tagx">摆臂要向下翻，而内侧必然在底板正上方，下翻时切进底板。<br>
+        按 10800 组参数搜索，可行解 <b>0</b>。这是形式问题，不是调参问题。</td>
+    </tr>
+    <tr>
+      <td>v2</td>
+      <td>竖直挡块压住托板尾部的配重短杆</td>
+      <td class="tagx">复位扫掠无解：舵机回位时要扫回原位，而托板已翻下、短杆正抬在扫掠弧内，
+        必然被打到。挡块往下转又会扫过短杆本身。</td>
+    </tr>
+    <tr>
+      <td>v3</td>
+      <td>竖直销轴插在托板耳板的<strong>通孔</strong>里</td>
+      <td class="tagx">销轴退出时要穿过耳板板厚区。<br>
+        按 3° 步长扫 0~90°，在 <b>21°~48°</b> 一直压在耳板实体上 —— 装配后卡着走，
+        表现为"舵机动了但托板不翻"。</td>
+    </tr>
+    <tr>
+      <td><b>v4（采用）</b></td>
+      <td>开口缺口 + 倒扣圆盘</td>
+      <td class="tago">销轴沿开口直接滑出，扫描显示 <b>0.5°</b> 起就完全离开耳板；
+        圆盘挡住竖直逃逸。两项检查全部通过。</td>
+    </tr>
+  </table>
+
+  <div class="badbox">
+    <b>还有一条更隐蔽的坑，值得单独说。</b><br>
+    v3 就算解决了通孔问题也不成立：一根<b>竖直</b>销轴插在<b>水平</b>板的孔里，
+    只能挡住板在平面内的位移。而托板绕铰链转时，耳板那一点的位移几乎全是
+    <b>竖直</b>的（半径向量近水平，切向近竖直）——
+    于是托板可以直接沿销轴往上"滑脱"，销轴一点都挡不住。<br>
+    <b>倒扣圆盘就是为这条加的</b>：它悬在耳板顶面上方 0.1 mm，托板想往上逃，
+    耳板顶面就顶在圆盘下表面上。
+  </div>
+</section>
+
+<!-- ================= 3. 关键数字 ================= -->
+<section class="card">
+  <h2><span class="n">3</span>几个决定成败的数字</h2>
+  <div class="grid2">
+    <div>
+      <table>
+        <tr><th>项目</th><th>数值</th><th>为什么</th></tr>
+        <tr><td>销轴直径</td><td><code>Ø5.0</code></td><td>受剪件，PETG 下抗剪远大于本项目载荷</td></tr>
+        <tr><td>缺口直径</td><td><code>Ø5.9</code></td><td>单边间隙 0.45 mm。太小装不进，太大有旷量</td></tr>
+        <tr><td>倒扣圆盘</td><td><code>Ø12.0</code></td><td>必须大于缺口，单边外伸 3.05 mm 才挡得住</td></tr>
+        <tr><td>圆盘底面间隙</td><td><code>0.10 mm</code></td><td>贴而不磨。大了托板会先翘起一段才被挡住</td></tr>
+        <tr><td>圆盘顶面到托板</td><td><code>0.15 mm</code></td><td>任何转角都不磨托板（销轴顶 34.5 &lt; 托板底 35.5）</td></tr>
+        <tr><td>最小释放行程</td><td><code>≈1°</code></td><td>开口缺口下销轴一离开边就解锁，行程几乎不敏感</td></tr>
+        <tr><td>固件实际行程</td><td><code>90°</code></td><td>余量极大，不要求舵机精度</td></tr>
+      </table>
+    </div>
+    <div>
+      <div class="infobox">
+        <b>为什么圆盘必须是独立零件</b><br>
+        圆盘 Ø12 比缺口 Ø5.9 大。如果它和销轴一体打印，耳板就<b>装不进去</b>了 ——
+        销轴没法穿过缺口。所以圆盘是单独一片，最后用 M2 自攻螺丝拧到销轴顶端的孔上。
+      </div>
+      <div class="warnbox">
+        <b>装配时唯一的关键点</b><br>
+        锁定位的角度由<b>销轴和缺口的实际配合</b>决定：先把舵机打到 0°，
+        装上耳板和托板、让销轴落进缺口，<b>这时再拧紧摇臂螺丝</b>。
+        反过来先定死角度再凑缺口，一定会偏心。
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 4. 装配 ================= -->
+<section class="card">
+  <h2><span class="n">4</span>装配顺序</h2>
+  <ol class="steps">
+    <li>
+      <strong>舵机装进支架，输出轴朝上</strong>
+      <div class="note">安装耳卡进两侧水平槽。机身整体偏向 +y（轴距机身近端 3.5 mm）。</div>
+      <div class="why"><b>装反的后果：</b>轴朝另一端会让销轴偏心 11 mm，缺口对不上，投不出去。</div>
+    </li>
+    <li>
+      <strong>摇臂套上齿盘，先别拧紧</strong>
+      <div class="note">把舵机打到 0°，用 M2×6 轻轻带上，留着调角度。</div>
+    </li>
+    <li>
+      <strong>装耳板和托板，让销轴落进缺口</strong>
+      <div class="note">销轴能顺畅落进缺口时，那个角度就是正确的 0°。然后拧紧摇臂螺丝。</div>
+    </li>
+    <li>
+      <strong>最后装倒扣圆盘</strong>
+      <div class="note">用 M2 自攻螺丝把圆盘拧到销轴顶端。拧到圆盘底面轻触耳板顶面即可，
+        不要压死 —— 压死会增加摩擦，舵机要克服它。</div>
+      <div class="why"><b>顺序不能反：</b>圆盘先装上去，耳板就套不进销轴了。</div>
+    </li>
+    <li>
+      <strong>测弹簧</strong>
+      <div class="note">压簧套在支架弹簧柱上（-x 侧），压缩后顶住摇臂尾部。
+        手动把摇臂往释放方向推，松手应能自己弹回。</div>
+      <div class="why"><b>弹簧是失效安全的核心：</b>断电时舵机没有保持力，全靠弹簧把摇臂压在
+        锁定位。没有弹簧，船一断电销轴就会被振动带着转开，载荷自己掉水里。</div>
+    </li>
+    <li>
+      <strong>装铰链，检查托板前伸</strong>
+      <div class="note">铰链轴线沿 x，位于 y=14。托板前端必须伸出船体外 ≥ 30 mm。</div>
+      <div class="why"><b>伸出不够：</b>救生圈会落在船帮上，滚回船里或卡住。</div>
+    </li>
+  </ol>
+</section>
+
+<!-- ================= 5. 自检 ================= -->
+<section class="card">
+  <h2><span class="n">5</span>通电前的四项手动自检</h2>
+  <p class="lead">不接线、不烧固件，纯手动做完。全过了再上电。</p>
+
+  <label class="check"><input type="checkbox"><span>托板往前推 —— 应该被销轴挡住，<b>推不动</b></span></label>
+  <label class="check"><input type="checkbox"><span>托板往上抬 —— 应该被倒扣圆盘挡住，<b>抬不动</b>（这条最容易漏，也是竖直销轴单靠自己是做不到的）</span></label>
+  <label class="check"><input type="checkbox"><span>手指把摇臂往释放方向拨开 —— 销轴退出缺口，托板<b>自己</b>翻下</span></label>
+  <label class="check"><input type="checkbox"><span>松手 —— 弹簧把摇臂推回，销轴回到原位（此时托板已翻下，销轴悬空，不会把托板顶回去）</span></label>
+
+  <div class="infobox">
+    <b>第四条是这套方案相对前两版的关键优势。</b>
+    v1、v2 都卡在这里：舵机回位时挡块必须扫回原位，而托板正好翻在扫掠路径上，必然被打到。
+    销轴方案里，托板一翻走，耳板就跟着离开了 —— 销轴回位时那里已经是空的。
+  </div>
+</section>
+
+<!-- ================= 6. 接线 ================= -->
+<section class="card">
+  <h2><span class="n">6</span>接线</h2>
+  <table>
+    <tr><th>连接</th><th>接到</th><th>说明</th></tr>
+    <tr><td>舵机信号</td><td><code>GPIO6</code></td><td>已在 <code>servo_release.c</code> 定义，50 Hz</td></tr>
+    <tr><td>舵机电源</td><td><code>UBEC 5V/3A</code></td><td class="tagx">不要用主控板载 5V</td></tr>
+    <tr><td>共地</td><td>UBEC GND ↔ 主控 GND</td><td class="tagx">必须连，否则信号没有参考电平</td></tr>
+    <tr><td>去耦电容</td><td>1000 µF 并在 UBEC 5V 输出</td><td>吸收舵机启动时的电流冲击</td></tr>
+    <tr><td>下拉电阻</td><td>10 kΩ，GPIO6 到 GND</td><td>主控复位瞬间引脚高阻，防噪声抽动舵机</td></tr>
+  </table>
+  <div class="warnbox">
+    <b>不接 1000 µF 的典型症状：一按投放，船就重启。</b>
+    MG90S 堵转电流约 700 mA、启动瞬间更高，电压跌到 ESP32-C3 复位阈值以下，
+    表现为"点了投放船没反应，但日志显示它重启过"。
+  </div>
+</section>
+
+<!-- ================= 7. 固件 ================= -->
+<section class="card">
+  <h2><span class="n">7</span>固件侧要注意的两点</h2>
+  <div class="grid2">
+    <div>
+      <h3 style="font-size:15px;margin:0 0 10px;color:var(--warn)">500 ms 后自动回位</h3>
+      <p style="font-size:14px;color:#c3cdd8;margin:0">
+        <code>servo_release_tick()</code> 在拉出 500 ms 后把舵机写回锁定位。
+        对这个方案是<b>安全</b>的（销轴回位时托板已翻走）。
+        但如果托板因摩擦没能在 500 ms 内翻下去，回位的销轴会重新落回缺口挂住托板，
+        而且舵机不会再动第二次。
+      </p>
+      <div class="why">
+        <b>首次实测：</b>抬轮连点投放 10 次，确认每次都听到托板落下的声音。
+        若偶发投不出去，把 <code>RELEASE_HOLD_MS</code> 从 500 改到 1200，
+        或改成释放后锁存不回位。
+      </div>
+    </div>
+    <div>
+      <h3 style="font-size:15px;margin:0 0 10px;color:var(--warn)">上电瞬间的抖动</h3>
+      <p style="font-size:14px;color:#c3cdd8;margin:0">
+        <code>servo_release_init()</code> 上电就写锁定位，这是对的 —— 保证上电不会误投放。
+        但 <code>ledc_channel_config</code> 的 <code>duty</code> 初值是 0（0 µs 脉宽），
+        对舵机等于"无信号"，上电瞬间可能抖一下。
+      </p>
+      <div class="why">
+        <b>改法：</b>把初值改成锁定位置的占空比 —
+        <code>.duty = deg_to_duty(SERVO_LOCKED_DEG)</code>（原来是 <code>0</code>）。
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 8. 排查 ================= -->
+<section class="card">
+  <h2><span class="n">8</span>装完不好用？按这个表查</h2>
+  <table>
+    <tr><th style="width:180px">现象</th><th>最可能的原因</th><th>怎么确认</th></tr>
+    <tr><td>点投放，舵机不动</td><td>桥接板转发周期把释放帧漏采了</td>
+      <td>看船端串口有没有 <code>BOAT_SERVO: 释放机构动作</code>。没有就是帧没到</td></tr>
+    <tr><td>舵机动了，托板不翻</td><td>销轴被耳板挡住（用了通孔而不是开口缺口）</td>
+      <td>手动拨开摇臂看托板会不会翻。会翻 = 舵机行程问题；不会翻 = 几何干涉</td></tr>
+    <tr><td>托板能被往上抬起</td><td>倒扣圆盘没装、或直径小于缺口</td>
+      <td>圆盘必须 Ø12 &gt; 缺口 Ø5.9</td></tr>
+    <tr><td>一按投放船就重启</td><td>舵机电流把主控电压拉垮</td>
+      <td>舵机是否走 UBEC 独立供电？输出端有没有 1000 µF？</td></tr>
+    <tr><td>托板抬不动但也投不出去</td><td>弹簧太硬，舵机克服不了</td>
+      <td>手动拨摇臂感受阻力；换软弹簧（自由长 12 mm、线径 0.5 mm）</td></tr>
+    <tr><td>投放后救生圈还在船上</td><td>托板前伸不够，或翻转角太小</td>
+      <td>前端伸出船体外 ≥ 30 mm；翻转到底约 30°</td></tr>
+    <tr><td>断电后载荷自己掉了</td><td>弹簧没装或太软</td>
+      <td>断电后晃船，看摇臂是否保持在锁定位</td></tr>
+  </table>
+</section>
+
+<!-- ================= 9. 文件 ================= -->
+<section class="card">
+  <h2><span class="n">9</span>文件在哪</h2>
+  <table>
+    <tr><th style="width:280px">文件</th><th>用途</th></tr>
+    <tr><td><code>drop_module.scad</code></td><td>参数化模型，唯一真值来源。改尺寸只改顶部 PARAMS</td></tr>
+    <tr><td><code>stl/bracket.stl</code></td><td>舵机支架</td></tr>
+    <tr><td><code>stl/horn.stl</code></td><td>摇臂 + 销轴（一体）</td></tr>
+    <tr><td><code>stl/tray_ear.stl</code></td><td>托板耳板（开口缺口）</td></tr>
+    <tr><td><code>stl/cap.stl</code></td><td>倒扣圆盘（独立件，M2 固定）</td></tr>
+    <tr><td><code>stl/tray.stl</code></td><td>演示托板（按你的船体改）</td></tr>
+    <tr><td><code>verify_geometry.py</code></td><td>尺寸链检查（间隙、行程、插入深度）</td></tr>
+    <tr><td><code>check_pin_sweep.py</code></td><td><b>路径扫描</b>：销轴摆出是否蹭耳板 + 竖直逃逸检查</td></tr>
+    <tr><td><code>build.ps1</code></td><td>一键导出 STL + 预览图</td></tr>
+    <tr><td><code>README.md</code></td><td>完整装配文档、限制说明、固件改法</td></tr>
+  </table>
+  <div class="infobox">
+    <b>改尺寸后的固定动作：</b>
+    <code>python verify_geometry.py</code> → <code>python check_pin_sweep.py</code> → <code>pwsh -File build.ps1</code>。<br>
+    第二个脚本别跳过 —— 通孔方案就是它查出来的，肉眼看模型完全看不出"销轴会蹭着耳板走"。
+  </div>
+</section>
+
+<footer>
+  几何数据取自 <code>drop_module.scad</code>：PIN_R=15 / PIN_D=5.0 / EAR_NOTCH=5.9 / CAP_D=12 /
+  PIN_TOP=34.5 / EAR_Z1=34.4 / TRAY_Z0=35.5，与两个自检脚本的检查项一致。<br>
+  演示为机构原理示意。托板为示意件，实际尺寸按你的船体和救生圈改。
+</footer>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ===== 机构参数（与 drop_module.scad 一致）=====
+  const PIN_R = 15, PIN_D = 5;
+  const EAR_NOTCH = 5.9, EAR_X0 = -4, EAR_X1 = 25;
+  const EAR_Y0 = -11, EAR_Y1 = 3.5, EAR_T = 3.5;
+  const EAR_Z1 = 34.4, EAR_Z0 = EAR_Z1 - EAR_T;
+  const CAP_D = 12, CAP_T = 0.85, PIN_TOP = 34.5;
+  const CAP_Z0 = PIN_TOP, CAP_Z1 = CAP_Z0 + CAP_T;
+  const SERVO_L = 22.8, SERVO_W = 12.2, SERVO_H = 22.5;
+  const SHAFT_OFF = 3.5, BASE_T = 3, GEAR_D = 4.9, HORN_T = 3;
+  const HORN_Z1 = BASE_T + SERVO_H + HORN_T;   // 28.5
+  const HINGE_Y = 14, HINGE_Z = 35.5;
+  const TRAY_X0 = -70, TRAY_X1 = 25;
+  const TRAY_FRONT_Y = -42, TRAY_BACK_Y = 14, TRAY_T = 4;
+  const TRAY_Z0 = HINGE_Z, TRAY_Z1 = TRAY_Z0 + TRAY_T;
+  const TRAY_DUMP = 30;
+
+  const NOTCH_R = EAR_NOTCH / 2, PR = PIN_D / 2, CAP_R = CAP_D / 2;
+
+  // ===== 状态 =====
+  let servo = 0, tray = 0, target = 0, autoPlay = false, fall = 0;
+
+  const NS = "http://www.w3.org/2000/svg";
+  function el(tag, attrs, parent){
+    const e = document.createElementNS(NS, tag);
+    if (attrs) for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  const clampName = t => t;
+
+  // =====================================================================
+  // 俯视图
+  //   坐标：y 朝上（船内），x 朝右。销轴绕舵机轴 (0, 3.5) 在半径为 15 的圆上摆。
+  // =====================================================================
+  const topSvg = document.getElementById("topSvg");
+  const TW = 560, TH = 470;
+  const TS = 4.2, TCX = 300, TCY = 150;
+  const T = (x, y) => [TCX + x * TS, TCY + y * TS];   // y 向下为正，符合屏幕
+  // 注意：机构坐标里 +y 是船内（画面上方）。这里让 +y 向上，所以取负号：
+  const TP = (x, y) => [TCX + x * TS, TCY - y * TS];
+
+  function buildTop(){
+    topSvg.innerHTML = "";
+    topSvg.setAttribute("viewBox", `0 0 ${TW} ${TH}`);
+    topSvg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+
+    // 水面背景
+    el("rect", {x:0, y:0, width:TW, height:TH, fill:"rgba(27,58,75,.3)"}, topSvg);
+
+    const g = el("g", {}, topSvg);
+
+    // 船体（y >= 6 船内）
+    {
+      const [x0, y0] = TP(-78, 30), [x1, y1] = TP(34, 6);
+      el("rect", {x:Math.min(x0,x1), y:Math.min(y0,y1),
+        width:Math.abs(x1-x0), height:Math.abs(y1-y0),
+        fill:"#101a23", stroke:"#24384a", "stroke-dasharray":"5 4", rx:3}, g);
+      const t = TP(-76, 27);
+      el("text", {x:t[0], y:t[1], fill:"#3f5468", "font-size":11}, g).textContent = "船内";
+    }
+
+    // 托板投影
+    {
+      const [x0, y0] = TP(TRAY_X0, TRAY_BACK_Y), [x1, y1] = TP(TRAY_X1, TRAY_FRONT_Y);
+      el("rect", {x:Math.min(x0,x1), y:Math.min(y0,y1),
+        width:Math.abs(x1-x0), height:Math.abs(y1-y0),
+        fill:"rgba(198,205,216,.08)", stroke:"#6b7684", "stroke-width":1.2, rx:2}, g);
+      const t = TP(-24, -22);
+      el("text", {x:t[0], y:t[1], fill:"#5f6c7d", "font-size":11,
+        "text-anchor":"middle"}, g).textContent = "托板";
+    }
+
+    // 支架
+    {
+      const [x0, y0] = TP(-16, 24.8), [x1, y1] = TP(18, -2);
+      el("rect", {x:Math.min(x0,x1), y:Math.min(y0,y1),
+        width:Math.abs(x1-x0), height:Math.abs(y1-y0),
+        fill:"#1a222b", stroke:"#39434f", rx:4}, g);
+    }
+
+    // 舵机机身
+    {
+      const [x0, y0] = TP(-SERVO_W/2, SERVO_L), [x1, y1] = TP(SERVO_W/2, 0);
+      el("rect", {x:Math.min(x0,x1), y:Math.min(y0,y1),
+        width:Math.abs(x1-x0), height:Math.abs(y1-y0),
+        fill:"#242b34", stroke:"#4a5563", rx:2}, g);
+    }
+
+    // 耳板（带开口缺口）：用 path 画"矩形挖掉一个半圆"
+    {
+      const [ax0, ay0] = TP(EAR_X0, EAR_Y1);
+      const w = (EAR_X1 - EAR_X0) * TS, h = (EAR_Y1 - EAR_Y0) * TS;
+      // 缺口圆心在 (PIN_R, EAR_Y1)，半径 NOTCH_R —— 在矩形下边缘
+      const [ncx, ncy] = TP(PIN_R, EAR_Y1);
+      const r = NOTCH_R * TS;
+      const d = [
+        `M ${ax0} ${ay0}`,
+        `h ${w}`,
+        `v ${h}`,
+        `h ${-(EAR_X1 - PIN_R - NOTCH_R) * TS}`,
+        `a ${r} ${r} 0 0 1 ${-2*r} 0`,
+        `h ${-(PIN_R - NOTCH_R - EAR_X0) * TS}`,
+        `z`
+      ].join(" ");
+      el("path", {d:d, fill:"var(--orange)", opacity:.85,
+        stroke:"#b9781f", "stroke-width":1.2}, g);
+    }
+
+    // 弹簧柱
+    {
+      const [x, y] = TP(-12.5, 0);
+      el("circle", {cx:x, cy:y, r:3.6, fill:"#5a646f", stroke:"#7c8794"}, g);
+    }
+
+    // 铰链
+    {
+      const [x, y] = TP(0, HINGE_Y);
+      el("circle", {cx:x, cy:y, r:3.6, fill:"#6b7684"}, g);
+      const t = TP(0, HINGE_Y + 7);
+      el("text", {x:t[0], y:t[1], fill:"#5f6c7d", "font-size":9.5,
+        "text-anchor":"middle"}, g).textContent = "铰链";
+    }
+
+    // 舵机轴
+    {
+      const [x, y] = TP(0, 0);
+      el("circle", {cx:x, cy:y, r:GEAR_D/2*TS, fill:"#333d4a",
+        stroke:"#5a6675"}, g);
+    }
+
+    // ---- 动态 ----
+    const dyn = el("g", {}, topSvg);
+    const armLine = el("line", {stroke:"var(--blue)", "stroke-width":6.5,
+      "stroke-linecap":"round", opacity:.9}, dyn);
+    const capC = el("circle", {r:CAP_R*TS, fill:"rgba(124,192,255,.55)",
+      stroke:"var(--cyan)", "stroke-width":1.6}, dyn);
+    const pinC = el("circle", {r:PR*TS, fill:"var(--cyan)",
+      stroke:"#e6f4ff", "stroke-width":1.2}, dyn);
+
+    topSvg._parts = {armLine, capC, pinC};
+  }
+
+  // =====================================================================
+  // 侧视图
+  //   y 向右（船内），z 向上。铰链在 (HINGE_Y, HINGE_Z)。
+  // =====================================================================
+  const sideSvg = document.getElementById("sideSvg");
+  const SW = 560, SH = 470;
+  const SS = 4.0, SCX = 130, SCY = 400;
+  const S = (y, z) => [SCX + y * SS, SCY - z * SS];
+
+  function buildSide(){
+    sideSvg.innerHTML = "";
+    sideSvg.setAttribute("viewBox", `0 0 ${SW} ${SH}`);
+    sideSvg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+
+    const g = el("g", {}, sideSvg);
+
+    // 水面
+    {
+      const [, yTop] = S(0, -8);
+      el("rect", {x:0, y:yTop, width:SW, height:SH - yTop,
+        fill:"rgba(27,58,75,.65)"}, g);
+      el("line", {x1:0, y1:yTop, x2:SW, y2:yTop,
+        stroke:"#3d84a6", "stroke-width":1.5}, g);
+      const t = S(-30, -14);
+      el("text", {x:t[0], y:t[1], fill:"#4d8aa8", "font-size":11}, g).textContent = "水面";
+    }
+
+    // 船体
+    {
+      const [x0, y0] = S(4, 0);
+      el("rect", {x:x0, y:y0, width:22*SS, height:24*SS,
+        fill:"#141b23", stroke:"#2b3542", rx:3}, g);
+      const t = S(14, -6);
+      el("text", {x:t[0], y:t[1], fill:"#44586b", "font-size":11}, g).textContent = "船体";
+    }
+
+    // 支架
+    {
+      const [x0, y0] = S(-2, BASE_T);
+      el("rect", {x:x0, y:y0, width:26.8*SS, height:18.5*SS,
+        fill:"#1a222b", stroke:"#39434f", rx:3}, g);
+    }
+
+    // 舵机
+    {
+      const [x0, y0] = S(SERVO_L, BASE_T + SERVO_H);
+      el("rect", {x:x0, y:y0, width:SERVO_L*SS, height:SERVO_H*SS,
+        fill:"#242b34", stroke:"#4a5563", rx:2}, g);
+      const t = S(SERVO_L/2, 12);
+      el("text", {x:t[0], y:t[1], fill:"#5a6675", "font-size":10,
+        "text-anchor":"middle"}, g).textContent = "MG90S";
+    }
+
+    // ---- 动态 ----
+    const dyn = el("g", {}, sideSvg);
+
+    // 摇臂
+    const hornBar = el("rect", {fill:"var(--blue)", opacity:.9, rx:1.5}, dyn);
+    // 销轴柱段
+    const pinBar = el("rect", {fill:"var(--cyan)", stroke:"#e6f4ff",
+      "stroke-width":1.2, rx:1}, dyn);
+    // 倒扣圆盘
+    const capBar = el("rect", {fill:"rgba(124,192,255,.9)", stroke:"var(--cyan)",
+      "stroke-width":1.4, rx:1}, dyn);
+
+    // 托板组（绕铰链转）
+    const trayG = el("g", {}, dyn);
+    {
+      const [x0, y0] = S(TRAY_BACK_Y, TRAY_Z1);
+      el("rect", {x:x0 - (TRAY_BACK_Y - TRAY_FRONT_Y)*SS, y:y0,
+        width:(TRAY_BACK_Y - TRAY_FRONT_Y)*SS, height:TRAY_T*SS,
+        fill:"var(--light)", opacity:.95, rx:2}, trayG);
+      // 前唇
+      const [bx, by] = S(TRAY_FRONT_Y + 5, TRAY_Z1 + 6);
+      el("rect", {x:bx, y:by, width:5*SS, height:6*SS,
+        fill:"#aab4c1", rx:1.5}, trayG);
+    }
+    // 耳板（画在托板下方）
+    const earG = el("g", {}, dyn);
+    {
+      const [x0, y0] = S(EAR_Y1, EAR_Z1);
+      el("rect", {x:x0, y:y0, width:(EAR_Y1-EAR_Y0)*SS, height:EAR_T*SS,
+        fill:"var(--orange)", opacity:.9, rx:1.5}, earG);
+      const t = S(EAR_Y0 - 3, (EAR_Z0+EAR_Z1)/2);
+      el("text", {x:t[0], y:t[1], fill:"#b9781f", "font-size":9.5,
+        "text-anchor":"end"}, earG).textContent = "耳板";
+    }
+
+    // 载荷
+    const payloadG = el("g", {}, dyn);
+    const [pcx, pcy] = S(-14, TRAY_Z1 + 4.5);
+    const payloadE = el("ellipse", {cx:pcx, cy:pcy, rx:7*SS, ry:4.2*SS,
+      fill:"var(--red)", stroke:"#ff8b7e", "stroke-width":1.5}, payloadG);
+    const payloadH = el("ellipse", {cx:pcx, cy:pcy, rx:3.3*SS, ry:1.9*SS,
+      fill:"#0b0f14", opacity:.8}, payloadG);
+
+    // 铰链
+    const [hgx, hgy] = S(HINGE_Y, HINGE_Z);
+    el("circle", {cx:hgx, cy:hgy, r:3.6, fill:"#6b7684"}, sideSvg);
+
+    sideSvg._parts = {hornBar, pinBar, capBar, trayG, earG, payloadG,
+                      payloadE, payloadH, hinge:[hgx, hgy]};
+  }
+
+  // ===== 运动学 =====
+  const rad = d => d * Math.PI / 180;
+  function pinPos(deg){
+    const r = rad(deg);
+    return [PIN_R * Math.cos(r), SHAFT_OFF + PIN_R * Math.sin(r)];
+  }
+  function pinDistToNotch(deg){
+    const p = pinPos(deg);
+    return Math.hypot(p[0] - PIN_R, p[1] - EAR_Y1);
+  }
+  const RELEASED_DIST = NOTCH_R + PR;   // 超过这个中心距 = 销轴完全离开缺口
+
+  function render(){
+    // 俯视
+    const tp = topSvg._parts;
+    if (tp){
+      const [px, py] = pinPos(servo);
+      const [ox, oy] = TP(0, SHAFT_OFF);
+      const [sx, sy] = TP(px, py);
+      tp.armLine.setAttribute("x1", ox); tp.armLine.setAttribute("y1", oy);
+      tp.armLine.setAttribute("x2", sx); tp.armLine.setAttribute("y2", sy);
+      tp.capC.setAttribute("cx", sx); tp.capC.setAttribute("cy", sy);
+      tp.pinC.setAttribute("cx", sx); tp.pinC.setAttribute("cy", sy);
+    }
+
+    // 侧视
+    const sp = sideSvg._parts;
+    if (sp){
+      const [,, ] = [];
+      const py = SHAFT_OFF + PIN_R * Math.sin(rad(servo));
+      // 摇臂
+      const z0 = BASE_T + SERVO_H, z1 = z0 + HORN_T;
+      const [ax0, ay0] = S(Math.min(SHAFT_OFF, py + 2), z1);
+      const [ax1, ay1] = S(Math.max(SHAFT_OFF, py - 2), z0);
+      sp.hornBar.setAttribute("x", Math.min(ax0, ax1));
+      sp.hornBar.setAttribute("y", Math.min(ay0, ay1));
+      sp.hornBar.setAttribute("width", Math.max(Math.abs(ax1-ax0), 5));
+      sp.hornBar.setAttribute("height", (z1-z0) * SS);
+
+      // 销轴柱段
+      const [bx0, by0] = S(py + PR, PIN_TOP);
+      const [bx1, by1] = S(py - PR, z0);
+      sp.pinBar.setAttribute("x", Math.min(bx0, bx1));
+      sp.pinBar.setAttribute("y", Math.min(by0, by1));
+      sp.pinBar.setAttribute("width", Math.abs(bx1-bx0));
+      sp.pinBar.setAttribute("height", Math.abs(by1-by0));
+
+      // 圆盘
+      const [cx0, cy0] = S(py + CAP_R, CAP_Z1);
+      const [cx1, cy1] = S(py - CAP_R, CAP_Z0);
+      sp.capBar.setAttribute("x", Math.min(cx0, cx1));
+      sp.capBar.setAttribute("y", Math.min(cy0, cy1));
+      sp.capBar.setAttribute("width", Math.abs(cx1-cx0));
+      sp.capBar.setAttribute("height", Math.abs(cy1-cy0));
+
+      // 托板 + 耳板绕铰链转
+      const [hx, hy] = sp.hinge;
+      const rot = `rotate(${(-tray).toFixed(2)} ${hx} ${hy})`;
+      sp.trayG.setAttribute("transform", rot);
+      sp.earG.setAttribute("transform", rot);
+
+      // 载荷：随托板转，翻转后滑落
+      const base = S(-14, TRAY_Z1 + 4.5);
+      const ang = -tray * Math.PI / 180;
+      const dx = base[0]-hx, dy = base[1]-hy;
+      const rx = hx + dx*Math.cos(ang) - dy*Math.sin(ang);
+      const ry = hy + dx*Math.sin(ang) + dy*Math.cos(ang);
+      const drop = fall * 150;
+      sp.payloadG.setAttribute("transform", `translate(0 ${drop.toFixed(1)})`);
+      sp.payloadG.setAttribute("opacity", String(1 - fall*0.9));
+      sp.payloadE.setAttribute("cx", rx.toFixed(1));
+      sp.payloadE.setAttribute("cy", ry.toFixed(1));
+      sp.payloadH.setAttribute("cx", rx.toFixed(1));
+      sp.payloadH.setAttribute("cy", ry.toFixed(1));
+    }
+  }
+
+  // ===== 动画 =====
+  let last = performance.now();
+  function loop(now){
+    const dt = Math.min(now - last, 60); last = now;
+
+    if (Math.abs(servo - target) > 0.05){
+      const step = dt * 0.12;
+      servo += Math.sign(target - servo) * Math.min(step, Math.abs(target - servo));
+    } else servo = target;
+
+    const released = pinDistToNotch(servo) > RELEASED_DIST;
+    // 托板翻转：一阶缓动。系数 0.006 太小（3 秒才到 11°，永远追不上 30°），
+    // 改成 0.02，约 0.6 秒收敛到位，观感也更接近真实的下落。
+    tray += ((released ? TRAY_DUMP : 0) - tray) * Math.min(dt * 0.02, 1);
+
+    if (tray > 20) fall = Math.min(1, fall + dt * 0.0011);
+    if (tray < 4)  fall = Math.max(0, fall - dt * 0.004);
+
+    render();
+    updateUI(released);
+    requestAnimationFrame(loop);
+  }
+
+  // ===== UI =====
+  const slider = document.getElementById("slider");
+  const angleVal = document.getElementById("angleVal");
+  const statusEl = document.getElementById("status");
+  const statusTxt = document.getElementById("statusTxt");
+  const explain = document.getElementById("explain");
+
+  let lastState = "";
+  function updateUI(released){
+    angleVal.textContent = Math.round(servo) + "°";
+    if (!autoPlay && document.activeElement !== slider) slider.value = Math.round(servo);
+
+    const dist = pinDistToNotch(servo);
+    let st, cls, msg;
+    if (servo < 1 && !released){
+      st = "锁定"; cls = "locked";
+      msg = `现在是<b>锁定位</b>：销轴柱段卡在耳板的开口缺口里，顶上的倒扣圆盘压住耳板顶面。
+             托板往前翻会被销轴挡住，往上抬会被圆盘挡住 —— 两个方向都锁死。`;
+    } else if (released){
+      st = "已释放"; cls = "out";
+      msg = `销轴已完全离开缺口（中心距 <b>${dist.toFixed(1)} mm</b>），
+             托板绕铰链翻下 ${Math.round(tray)}°，载荷滑落。
+             注意：此时把舵机转回 0° 也不会把托板顶回去 —— 耳板已经跟着托板离开了。`;
+    } else {
+      st = "抽离中"; cls = "moving";
+      msg = `销轴正在退出缺口（中心距 <b>${dist.toFixed(1)} mm</b>，
+             失去依托需要超过 ${RELEASED_DIST.toFixed(2)} mm）。开口缺口的好处是
+             一旦销轴离开板边就立刻解锁，对行程不敏感。`;
+    }
+
+    if (st !== lastState){
+      lastState = st;
+      statusEl.className = "status " + cls;
+      statusTxt.textContent = st;
+      explain.innerHTML = msg;
+    } else if (released){
+      const b = explain.querySelector("b");
+      if (b) b.textContent = dist.toFixed(1) + " mm";
+    }
+  }
+
+  slider.addEventListener("input", ()=>{
+    autoPlay = false;
+    target = Number(slider.value);
+  });
+
+  document.getElementById("btnDrop").addEventListener("click", ()=>{
+    autoPlay = true; target = 90;
+    setTimeout(()=>{ autoPlay = false; }, 1000);
+  });
+
+  document.getElementById("btnReload").addEventListener("click", ()=>{
+    autoPlay = true; target = 0;
+    setTimeout(()=>{
+      fall = 0; tray = 0; autoPlay = false;
+    }, 800);
+  });
+
+  buildTop();
+  buildSide();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

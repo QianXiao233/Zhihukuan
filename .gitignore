@@ -144,4 +144,25 @@ datasets/
 # 前端 3D 资源：大坝沙盘模型必须入库（上面的 models/ 是给数据集用的）
 !Software/reservoir-platform/frontend/public/models/
 !Software/reservoir-platform/frontend/public/models/*
+# 视觉模型：权重不入库（*.onnx / models/ 已忽略），但说明文档要入库
+!Software/boat-rescue-console/vision/models/
+!Software/boat-rescue-console/vision/models/README.md
+
+# ---------- 视觉训练与实验产物 ----------
+# training/ 含原始数据集、导出的 CSV 与权重，实测约 4.8 GB，绝不入库
+Software/boat-rescue-console/vision/training/
+Software/boat-rescue-console/vision/runs/
+
+# ---------- 本机工具与临时目录 ----------
+# 只在开发机上用的脚本集合、沙箱权限修复报告
+_tools/
+_acl-recovery/
+_dsh-acl-recovery/
+
+# ---------- 误创建的空文件 ----------
+# vision/ 下这几个 0 字节文件是命令拼错留下的，删掉前先别让它们进库
+Software/boat-rescue-console/vision/0.35
+Software/boat-rescue-console/vision/cd
+Software/boat-rescue-console/vision/python.exe
+*.exe
 

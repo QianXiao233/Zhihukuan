@@ -104,7 +104,7 @@
 
 | 防水盒 | 装 DFR1063 + UBEC |
 
-| ArUco 码 | ID 0，4x4\_50 字典，5cm×5cm，白边保留 1cm |
+| ArUco 码 | ID 0，4x4\_50 字典，**9cm×9cm**（船顶 10.9cm，四周留白），白边保留 1.2cm |
 
 
 
@@ -226,9 +226,9 @@
 
 | release\_flag | uint8 | 0=不释放, 1=释放 |
 
-| manual\_throttle | int16 | 手动油门 -255\~255 |
+| manual\_throttle | int16 | 手动油门 -200\~200（网页/服务端/固件三处统一 ±200；旧文档写的 ±255 有误） |
 
-| manual\_steer | int16 | 手动转向 -255\~255 |
+| manual\_steer | int16 | 手动转向 -200\~200（**正 = 右转**，与固件 `left = throttle + steer` 和视觉伺服约定一致） |
 
 
 
@@ -286,9 +286,9 @@ BOAT\_TO\_GROUND\_FORMAT = '<ffiBxxxiiifBxxx'  # 32 字节
 
 | :--- | :--- | :--- |
 
-| 电脑发指令 | 立即 ESP-NOW 转发 | 更新 lastRecvTime，执行任务 |
+| 电脑发指令 | 按任务状态限频转发（见下） | 更新 lastRecvTime，执行任务 |
 
-| 电脑无指令 | 每 50ms 轮询发上次指令 | 刷新 lastRecvTime，保持当前任务 |
+| 电脑无指令 | 每 500ms 轮询发上次指令（待机/手动）；自主航行 100ms；释放帧 50ms 内立即发 | 刷新 lastRecvTime，保持当前任务 |
 
 | 桥接板断电 | 停止发送 | 超过 3 秒未收到 ESP-NOW 数据后进入应急搜索；二哈未发现目标时原地转圈，发现后追踪并在估算距离不大于 20cm 时停车 |
 
@@ -637,6 +637,48 @@ I BOAT_MAIN:         目标 X=272 Y=156 宽=289 估算距离=0.17 m
 
 目标坐标、像素宽度与单目测距均已正确解析。
 
+#### 自定义模型接入（二哈部署自训练模型后怎么用）
+
+二哈识图 2 支持把自训练模型（YOLO 检测/分类）装到设备上。装好后设备功能列表里会多出一项，
+**它的算法 ID 不是内置的 1~19**，而是设备分配的更大编号（实测常见 128 以上，例如 131）。
+固件侧只改一个宏即可切过去：
+
+```c
+// Hardware/Firmware/boat/controller-idf/main/shared/boat_controller_config.h
+#define HUSKY_ALGORITHM_ID   3   // 默认 3 = 内置"物体追踪"；装了自定义模型后改成设备上显示的 ID（如 131）
+```
+
+**怎么从设备读出这个 ID**：
+
+1. 二哈上电，用设备上的触摸屏进入那个自定义模型的功能页（功能名就是安装时填的 App Name）；
+2. 该功能页**左上角**（或右上角「信息 / i」页）会显示算法 ID 序号，记下这个数字；
+3. 也可在船端串口日志里看 `RETURN_BLOCKS` 的 `algo_id` 字段（`husky_block_t.algo_id`）反查；
+4. 把 `HUSKY_ALGORITHM_ID` 改成该数字 → 重新编译烧录，**不需要改任何解析代码**。
+
+改完在启动日志确认实际下发的 ID：
+
+```
+I BOAT_MAIN: HUSKYLENS 算法 ID=131（HUSKY_ALGORITHM_ID）
+I BOAT_HUSKY: 切换算法 131 成功
+I BOAT_MAIN: HUSKYLENS 2 初始化成功（算法 ID=131）
+```
+
+> `main.c` 里有 `_Static_assert` 校验取值必须 0~255 —— 协议帧的 `AlgoID` 只有一个字节，
+> 写成 `0x1FF` 之类会直接编译失败，避免现场只看到"切换算法失败"却查不出原因。
+
+**为什么自定义模型的块名/类名不影响 x/y/w/h 解析**：
+
+协议里 `RETURN_BLOCKS` 的块数据前 10 字节是**固定布局** —— `data[0]=块ID`、`data[1]=算法ID`、
+`data[2..9]=x/y/w/h（4 个 int16 小端）`。自定义模型只是在**这 10 字节之后**追加类名/置信度等
+字段（字符串），那只会让帧里的 `Len` 变大，**前 10 字节的偏移一个都不变**。因此：
+
+- 驱动只取前 10 字节，`len >= 14` 的判断对内置算法与自定义模型**同样成立**，无需区分；
+- 块名、类别数、类别顺序都不参与解析，换模型/改类别名不用改固件；
+- 船端的 `target_seen` 语义随之退化为"当前帧检测到至少一个目标框"（默认算法下才是"追踪到目标"），
+  下游的单目测距、40 cm 接管、20 cm 停车逻辑完全复用。
+
+> 模型训练 → 打包 → 安装到设备的完整流程见 `Software/boat-rescue-console/docs/HUSKYLENS_CUSTOM_MODEL.md`。
+
 > 投放释放（舵机）另见 §3.10。
 
 ### 3.9 全局视觉定位（上位机，`Software/boat-rescue-console/vision/`）
@@ -672,6 +714,7 @@ I BOAT_MAIN:         目标 X=272 Y=156 宽=289 估算距离=0.17 m
 pip install -r Software/boat-rescue-console/vision/requirements.txt
 
 cd Software/boat-rescue-console/vision
+python test_boat_heading.py       # 航向回归测试（纯几何，不需要相机/OpenCV，改 boat.py 后必跑）
 python locator.py --calibrate     # 鼠标依次点水池四角：左下→右下→右上→左上
 python pick_hsv.py                # 鼠标点选目标，取 HSV 阈值填进 config.py
 python locator.py                 # 正式定位（保持 npm run dev 在运行）
@@ -685,11 +728,13 @@ python locator.py --simulate      # 无相机：用运动学模型验证整条�
 
 **⚠️ 航向精度是整个系统最脆弱的一环**：
 
-俯视相机里 5 cm 的 ArUco 码只有几十像素，角点抖动 1~2 px 就会带来数度航向误差，而船端 PID **直接把它当 `boat_heading` 用**。航向噪声大 → PID 持续振荡 → 船在目标点附近绕圈（这类系统最典型的失败模式）。
+俯视相机里 9 cm 的 ArUco 码约百来像素（此前 5 cm 时只有几十像素），角点抖动 1~2 px 就会带来数度航向误差，而船端 PID **直接把它当 `boat_heading` 用**。航向噪声大 → PID 持续振荡 → 船在目标点附近绕圈（这类系统最典型的失败模式）。
 
-代码里已做三重缓解：角点按 `x+y`/`y-x` 排序保证顺序稳定、方向向量取两侧边平均、航向低通滤波（`HEADING_SMOOTHING=0.4`）。若实测仍振荡：
+> **v1.6 已修复一个比噪声严重得多的问题**：原实现按图像坐标（`x+y`/`y-x`）重排 ArUco 角点，码转过 45° 后角的物理身份就会认错，航向在 3/4 的朝向上直接偏 90°/180°。现在改为**直接使用检测器返回的、随码旋转的原始角点顺序**，见 §3.12。**不要再用任何"按图像坐标排序"的做法**，`test_boat_heading.py` 会挡住这类回归。
 
-1. 把 ArUco 码**印大一些**（10 cm 优于 5 cm）——最有效的办法
+代码里现有的缓解手段：方向向量取两侧边中点之差（等效平均两一边）、航向低通滤波（`HEADING_SMOOTHING=0.4`）。若实测仍振荡：
+
+1. 把 ArUco 码**印大一些**（本项目已用 9 cm；10 cm 还可再大）——最有效的办法
 2. 降低 `HEADING_SMOOTHING`（更平滑但更滞后）
 3. 降低船端 PID 的 `Kp` 或加大 `Kd`
 
@@ -782,7 +827,375 @@ WiFi/ESP-NOW，屏幕与诊断读数照常工作。这样能一刀切开"射频"
 15~25 °C，所以 56 °C 结温对应的表面温度约 35~40 °C，手感是温热。优化前 78 °C 属于
 "偏高但未超限"，夏季室温上升会有风险 —— 这也说明当时处理是必要的。
 
-\*文档版本：v1.5\*
+### 3.12 v1.6：定位 / 投放 / 急停修复记录
+
+本轮针对"水里定位"和"救人"两条主链路做了一次集中修复，**改动涉及 Python、Node、
+网页、两块固件**，改动后 Node 协议测试、网页构建、Python 航向回归测试、两块固件
+`idf.py build` 全部通过。以下按问题—改法—现场验证方式记录。
+
+#### 1. 航向：不再按图像坐标重排 ArUco 角点（最关键）
+
+`cv2.aruco.detectMarkers` 返回的角点顺序是**相对码本身固定**的（随码一起旋转）。
+旧实现用 `x+y / y-x` 把它重排成"图像上的左上/右上/右下/左下"，等价于假设码在画面里
+基本是正的：码转过 45° 后角的物理身份就被认错，航向会在 **3/4 的朝向上跳 90°/180°**，
+船端 PID 于是带着错误航向跑，表现为"绕圈、进不了 40 cm 末端区"。
+
+- 改法：`vision/boat.py` 直接使用检测器原始顺序，新增 `heading_from_corners()`；
+  贴码方向不符时只改 `HEADING_OFFSET_DEG`。
+- 回归测试：`vision/test_boat_heading.py`（纯几何，不需要相机/OpenCV），
+  同时验证旧实现确实会在 55/72 个朝向上出错，防止以后再被"重排"回去。
+- **现场验证**：`python locator.py --show`，手拿船原地转一圈，打印的 `hdg=` 必须
+  单调连续；45°/135° 附近不应出现 ±90° 跳变。
+
+#### 2. 投放：释放帧不再被 500 ms 转发周期采样漏掉
+
+服务端只在时间窗内发 `mission_state=2 / release_flag=1`，而桥接板降温改造后是
+**每 500 ms 才把"最新命令"转发一次**。200 ms 的窗口有约 60% 概率整个落在两次转发
+之间——界面显示"已下发"，船端舵机纹丝不动。
+
+- 改法：桥接板对释放帧**立即转发**（限到 20 Hz），其余状态仍按原周期；服务端时间窗
+  从 200 ms 放宽到 600 ms 作为双保险。
+- **现场验证**：抬轮，连点投放 10 次，船端串口应每次都能看到
+  `BOAT_SERVO: 释放机构动作`；不再出现"点了没反应"。
+
+#### 3. 视觉接管闸门：急停现在真的能停船
+
+原来视觉程序推送坐标时，服务端会用**强制 `armed=true`** 的帧覆盖网页指令，
+网页的急停/空格/失锁对这条通道完全无效。现在：
+
+- 服务端新增 `visionGate`，`{type:'visionGate', allow:false}` 后视觉坐标一律不生效；
+- 网页的**空格 / ESC / 红色急停 / 锁定动力 / 停止自主导航**都会关闭闸门；
+- 网页顶栏显示 `视觉接管中`（橙色）/`视觉待机`/`视觉已屏蔽`，被屏蔽时出现
+  「恢复视觉」按钮（必须由人显式恢复）；
+- 失焦、切模式只归零网页通道，不切断视觉救援。
+
+#### 4. 电机方向：补回参考实现里的 M1 取反
+
+Arduino 参考实现有 `M1_DIRECTION_INVERTED = true`（左右明轮镜像安装），ESP-IDF
+移植时漏掉了。现在 `shared/boat_controller_config.h` 用
+`M1_DIRECTION_INVERTED / M2_DIRECTION_INVERTED` 显式配置，`motors.c` 按宏取反。
+
+- **现场验证（必做）**：抬轮推 W，两轮都应向前；若某侧反转，把对应宏改 0。
+  同时按 A 应左转（网页 steer 已按"正 = 右转"统一）。
+
+#### 5. 末端阶段丢目标不再永久停船
+
+原实现只要二哈看不到目标就 `motors_stop()` 然后一直停着（二哈没连上、目标在船后、
+被船身挡住都算），救援直接卡死。现在的节奏：
+
+| 丢目标时长 | 行为 |
+| :--- | :--- |
+| < 1.5 s | 停车（不按旧画面盲冲） |
+| 1.5 ~ 8 s | 原地慢速旋转搜索 |
+| > 8 s | 退回坐标导航重新对准，3 s 内不重复进入末端阶段 |
+
+#### 6. 控制带宽：自主航行期间转发提到 10 Hz
+
+船端 PID 按 20 Hz 整定，但桥接板 500 ms 一帧等于 2 Hz 控制带宽，容易出现
+"修正过头—反向修正"的摆动。现在 `mission_state=1` 时桥接板按 100 ms 转发，
+待机/手动仍是 500 ms（保持降温效果）。
+
+#### 7. 定位链路的三处工程加固
+
+- **标定分辨率校验**：`calibration.json` 现在记录标定时的分辨率，运行时相机分辨率
+  不一致直接拒绝启动（否则米坐标会整体缩放错，而且没有任何报错）。
+- **池边围栏**：视觉程序不上报超出水池（含 0.1 m 余量）的坐标，服务端 400 ms 超时
+  会自动停车，避免误检把船带出池子。
+- **航向 360° 取整**：`359.996°` 不再被 round 成 `360.0` 而整帧被服务端 400 丢掉。
+
+#### 8. 网页层同步修正
+
+| 项 | 修正 |
+| :--- | :--- |
+| 全 0 坐标 | 原来判为"合法坐标导航"，但船端把全 0 当"无定位"→ 二哈搜救。现在前端直接拦截并提示 |
+| 遥测超时 | 新增 1.5 s 看门狗：显示"遥测超时"并自动锁定网页动力（`emergency` 字段在真断链时根本发不出来，不能依赖） |
+| 投放状态 | "已下发"6 s 后自动复位（它只代表帧发出去了，不是船端确认） |
+| A/D 符号 | 统一为"正 steer = 右转"，与固件/视觉一致（原来按 A 会右转） |
+| 航向边界 | 前端校验、输入框上限、提示文案统一为 0–359.9 |
+| 断线 | WebSocket 1.5 s 后自动重连（原来只能刷新页面） |
+| 空格 | 在输入框内不再误触发急停（ESC 仍然随时急停） |
+
+#### 9. 仍需现场确认的项
+
+1. 抬轮：W/A/S/D 方向、`M1_DIRECTION_INVERTED`、急停是否真的停船。
+2. 静态：`locator.py --show` 转一圈看航向连续性；卷尺核对米坐标。
+3. 投放：连点 10 次数船端日志。
+4. 下水：末端 40 cm 交接、20 cm 停车（停车距离依赖
+   `FOCAL_LENGTH` / `OBSTACLE_REAL_WIDTH` 两个现场标定值，见 main.c 注释）。
+5. 2 帧/秒改 10 Hz 后的桥接板温度需复测（自主航行时），若偏高可把
+   `SEND_INTERVAL_AUTONOMOUS_MS` 调回 200。
+
+### 3.13 v1.7 / v1.8：接入平台前端 / 上线部署 / 识别模型 / 自主规划
+
+这一版把驾驶台并进了水库平台前端并部署上线，同时补上 Python 侧的识别模型与自主规划。
+**26 字节串口协议零改动**（规划结果仍只填 `target_x / target_y`）。
+
+#### 1. 驾驶台重写为平台原生 Vue 页面（`/boat`）
+
+第一版是用 iframe 把 React 驾驶台整页塞进 `/boat`，实际看下来和平台的浅色卡片风格两张皮。
+v1.8 改为**用 Vue 原生重写**：`views/BoatView.vue` + `views/BoatView.css`，直接复用平台的
+`ViewShell`、卡片、徽标、按钮和配色，不再有 iframe、不再加载第二套 UI 框架。
+
+页面结构（沿用平台的卡片语言）：
+
+```
+┌ 无人艇中心 ────────────────────────────────────────────────┐
+│ 顶部横幅：设备档案 / 串口状态 / 视觉接管状态 / 急停         │
+│ 控制链路 │ 船端遥测 │ 任务状态                              │
+│ 驾驶控制（手动WASD+功率 / 自主坐标）│ 船载视角（Janus）+ 投放 │
+└────────────────────────────────────────────────────────────┘
+```
+
+功能与本轮 React 控制台对齐并做了补充：
+
+- 串口连接/断开、端口自动选择、多 ESP32 提示；
+- 手动 WASD（按钮 + 键盘）、**推进功率 20–100% 滑杆**、符号统一为"正 steer = 右转"；
+- 自主坐标导航：全留空 = 纯二哈搜救；**四项坐标全 0 或越界直接拒绝解锁**；
+- **视觉接管可见**：横幅 + 驾驶控制卡显示"视觉接管中 / 视觉待机 / 视觉已屏蔽"，
+  并展示 `locator.py` 当前下发的船/目标坐标；
+- **急停真正能停船**：空格 / ESC / 急停按钮 / 锁定动力 / 断开串口都会关闭服务端视觉闸门
+  （`{type:'visionGate', allow:false}`），关闸后出现「恢复视觉接管」按钮；
+- **遥测看门狗**：1.5 s 无数据自动锁定动力并提示（船端的 emergency 标志在断链时根本发不出来，
+  不能依赖它）；
+- **投放**：二次确认 + 3 s 自动取消 + "已下发"6 s 后复位；
+- **断线自动重连**：`BoatControlService` 按 1.5→3→5 s 退避重连（原来只能刷新页面）；
+- 失焦、切模式只归零网页通道，不切断正在执行的视觉救援。
+
+配套改动：
+
+| 文件 | 改动 |
+| :--- | :--- |
+| `utils/boatControlService.js` | 新增 `sendVisionGate()`、断线自动重连、关闭时取消重连 |
+| `serial-service/index.js` | 视觉状态广播里补上 `navigation`，页面可显示视觉下发的坐标 |
+| `frontend/package.json` | `build` 回归 `vite build`（不再先构建 React 子应用） |
+| `Software/boat-rescue-console` | React 驾驶台保留为**独立调试工具**，`vite.config.js` 的 `base=/console/` 已回退，不再参与平台构建 |
+
+#### 2. 部署（宝塔，zhka / 81.70.63.53）
+
+实际布局（与 deploy/README 正文的旧路径不同，README 已更正）：
+
+| 项 | 路径 |
+| :--- | :--- |
+| 前端站点根 | `/www/wwwroot/zhka/h5/reservoir-platform` |
+| 后端 | `/www/wwwroot/zhka/backend/dam-server/dam-server-2.0.1.jar` |
+| vhost | `/www/server/panel/vhost/nginx/html_zhka.demo.ai.qianxiao.xin.conf` |
+
+- 只替换静态文件**不需要重启 nginx**（nginx 直接读磁盘），本次即如此；
+- 部署前先 `tar` 备份旧产物（本次备份 `/root/zhka-reservoir-platform-backup-20261027-154747.tar.gz`），
+  上传后 `chown www:www` + `chmod 755`；
+- 构建必须带 `VITE_MQTT_BROKER_URL=wss://zhka.demo.ai.qianxiao.xin/mqtt`，否则实时监测页
+  会带着 `ws://81.70.63.53:8083/mqtt` 上线（HTTPS 下被拦）。
+- **云端页面控制本地船已验证可行**：Chrome 把 loopback 当可信源，HTTPS 页面直接
+  fetch `http://127.0.0.1:4174` 和连接 `ws://127.0.0.1:4174` 都成功（实测 Chrome 156，
+  视觉坐标推送后云端页面 203 ms 内显示"视觉接管中"）。
+- **船载视频在云端页面会被混合内容拦掉**：Janus 默认 `http://192.168.2.14:8088/janus`
+  是局域网 HTTP，不属于可信源。要云端看视频需给 Janus 配 HTTPS/WSS 反代并设
+  `VITE_JANUS_URL=https://<域名>/janus`；否则现场用本机 `npm run dev` 打开驾驶台。
+
+#### 3. 识别模型：`vision/detector.py`（融合检测，可选 ONNX）
+
+- **传统检测增强**：多段 HSV（config 主段 + 背光偏红 / 强光偏黄两个补段）→ 水池 ROI
+  **多边形掩膜**（用单应矩阵逆映射，池外橙色物体直接丢弃）→ 形态学 → 轮廓打分
+  （面积/长宽比/填充率/圆度/凸度）→ 置信度；`RETR_CCOMP` 并减去内部空洞，避免把
+  空心反光环当成实心目标。
+- **时序跟踪**：alpha-beta 滤波（位置 EMA + 速度估计），距离门限关联；丢失时位置冻结、
+  置信度逐帧衰减，超过 `TARGET_LOST_FRAMES` 判丢，不长期沿用陈旧坐标。
+- **ONNX 人形后端**（`cv2.dnn`，不需要 torch/onnxruntime）：`models/yolov8n.onnx`
+  （12.9 MB，SHA-256 见 `vision/models/README.md`），每 N 帧推理一次，只取 COCO class 0
+  person，框底边中点映射到水池坐标；置信度高时优先、无颜色目标时兜底；模型缺失自动禁用。
+- **实测耗时（1080P）**：纯传统 2.9–3.0 ms/帧；开 ONNX（每 4 帧）约 15 ms/帧。
+- 回滚：`Detector(multi_segment=False)` 或命令行 `--legacy-detector` 退回 target.py。
+
+> 说明：COCO 预训练的 person 模型认不出"橙色浮球"，所以演示目标仍以传统检测为主，
+> ONNX 只负责"真人是落水者"的场景；要识别自定义救生圈需要现场采 20~50 张照片再微调
+> （`vision/models/README.md` 给了放置与训练入口）。
+
+#### 4. 自主规划：`vision/planner.py`（A* + 覆盖搜索 + 纯追踪）
+
+- `PoolPlanner`：1.2 m 水池 → 24×24 栅格（50 mm），边界按"船半径 90 mm + 余量 50 mm"
+  膨胀；A\*（8 邻接/对角 √2/禁穿角，每步做连续空间采样校验）+ LOS 化简；起终点自动
+  吸附最近可行格；不可达返回直线兜底并置 `reachable=False`；`add_obstacle()` 支持障碍。
+- `PurePursuit`：沿路径取前视点作为**下发给船的虚拟目标**。硬约束：剩余路径 > lookahead
+  (0.55 m) 时，虚拟目标与船的距离必须 ≥ 0.5 m —— 否则船端会在 40 cm 处提前切二哈末端、
+  搜索段卡死。急弯处沿路径前推到够远（等效临时加长 lookahead）；几何无解时取剩余路径
+  上离船最远的点，绝不发贴脸目标。另加 ±0.5 m 进度窗口，避免弓字形相邻航线间投影跳变
+  （现场表现为船画正弦）。
+- `Planner` 状态机：有目标 TRACK（A\* 追目标），无目标 SEARCH（弓字形覆盖，走到头整条
+  反转复用）；定期重规划 1 s + 目标移动 >0.15 m / 偏离路径 >0.2 m 事件触发，
+  最小间隔 0.2 s 防抖。
+- **性能**：A\* 空池 0.118 ms、绕障 0.694 ms；`Planner.update` 稳态 0.104 ms / 最坏 0.208 ms
+  （20 Hz 预算 50 ms，占用 <0.5%）。
+- **几何限制（现场需知道）**：40 cm 交接 + 1.2 m 水池，意味着"下发目标 ≥0.5 m"把船的
+  有效操纵粒度限制在 0.5 m 量级。TRACK 不受影响（端到端仿真的到点误差 4.7 cm）；
+  SEARCH 的航线几何覆盖率 100%，但实际扫掠轨迹只能到约 65%。若要更贴线，只能放宽
+  搜索段交接距离或换更大水池。
+
+#### 5. locator.py 集成与开关
+
+- `build_detector()`：优先融合检测器，异常/缺依赖时自动回退 `target.py`；
+- `build_planner()`：构造 A\*/覆盖/纯追踪规划器，失败时退回"直接下发目标坐标"；
+- 每帧：`plan = planner.update(pose, tgt)`，有目标时下发 `plan.target_x/y`（虚拟目标），
+  无目标且开启覆盖搜索时下发搜索航点；船位姿丢失则 `planner.reset()`，恢复后重新规划；
+- 命令行：`--search`（默认**关**，开启后一启动船就会自己动，台架慎用）、`--no-planner`、
+  `--no-yolo`、`--legacy-detector`；
+- 配置：`config.py` 的 `USE_FUSED_DETECTOR / USE_PLANNER / SEARCH_WHEN_NO_TARGET /
+  YOLO_* / PLANNER_*`。
+
+#### 6. 验证记录（2026-10-27）
+
+| 项目 | 命令 | 结果 |
+| :--- | :--- | :--- |
+| 平台构建 | `cd frontend; $env:VITE_MQTT_BROKER_URL='wss://zhka.../mqtt'; npm run build` | 通过，产物为 `index.html + assets/ + models/`（无 `console/`） |
+| 航向回归 | `python test_boat_heading.py` | 新实现 0~355° 误差 0.000°；旧实现 55/72 朝向错 |
+| 检测器 | `python test_detector.py` | 25 项断言全过；1080P 2.97 ms/帧（传统）/15.0 ms（含 ONNX） |
+| 规划器 | `python test_planner.py` | 13 项全过；1524 帧纯追踪 0 次"贴脸"违规；端到端 TRACK 在 5.5 s 内收敛 |
+| 云端部署 | `curl -sk https://zhka.demo.ai.qianxiao.xin/…` | `/`、`/index.html`、`/assets/index-*.js`、`/assets/BoatView-*.js` 全 200 |
+| 云端页面 | Chrome 打开 `#/boat` | **原生 Vue 页面**（无 iframe），平台外壳/鉴权/后端数据正常；`/api/ports` 与 WS 均连通本地服务 |
+| 本地验收 | `npm run dev` + 本地 serial-service | 视觉推送后横幅变"视觉接管中"，急停后服务端 `gate=false` 且出现"恢复视觉接管" |
+| 固件 | `idf.py build`（主控 + 桥接板） | 均通过（v1.6 改动） |
+
+#### 7. 仍需现场确认 / 后续
+
+1. 真机跑一遍 `locator.py --show`：融合检测在真实光照下的阈值（必要时 `multi_segment=False`）；
+2. `--search` 首次开启请在抬轮或浅水、无人的状态试，确认覆盖航线不会撞池壁；
+3. 视频上云：给 Janus 配 HTTPS/WSS 反代后重设 `VITE_JANUS_URL` 重新构建；
+4. 自定义救生圈模型：采 20~50 张现场照片后按 `vision/models/README.md` 微调并换成自己的 onnx；
+5. 部署脚本目前是手工 `npm run build` + `scp`，后续可固化成 CI/一条命令。
+
+### 3.14 v1.9：二哈识图 2 自训练模型（模拟溺水人员）
+
+目标从"上位机颜色检测"升级为**在船载二哈识图 2 上跑自训练模型识别模拟溺水人员（人形假人）**。
+官方能力已确认：HUSKYLENS 2（SEN0638，K230 6TOPS）支持部署自训练模型，功能列表里会多一项，
+算法 ID 由设备分配；I2C 协议不变。完整操作手册见
+[`HUSKYLENS_CUSTOM_MODEL.md`](./HUSKYLENS_CUSTOM_MODEL.md)，训练工具在 `vision/training/`。
+
+#### 1. 官方流程（硬约束）
+
+| 环节 | 要求 |
+| :--- | :--- |
+| 设备 | 固件 ≥ 1.1.6；USB 连接后出现 `HUSKYLENS 2` U 盘 |
+| 任务/架构 | 目标检测，**仅 YOLOv8n / YOLO11n** |
+| 输入尺寸 | 只能 224 / 320 / 640，训练与 ONNX 导出必须一致 |
+| 数据 | YOLO 格式，每类 ≥10 张（实际建议单类 150–300 张） |
+| 打包 | 官方 `HUSKYLENS2_Package_Generator.exe`（Windows，需 .NET 7 运行时）生成 zip |
+| 安装 | zip 放 `HUSKYLENS 2\storage\installation_package\`，设备上「模型安装 → 本地安装」 |
+
+> 本机 github 不通，Package Generator 已从 DFRobot 官方仓库的 **Gitee 镜像**下载，放在
+> `D:\tools\huskylens\generator\`（v1.0，94.7 MB，已启动验证）。预训练权重从 HuggingFace 取。
+
+#### 2. 训练工具链（`vision/training/`）
+
+| 文件 | 作用 |
+| :--- | :--- |
+| `synthetic.py` | 生成"水面 + 人形剪影"合成数据集（真实照片到位前验证流水线） |
+| `split_dataset.py` | 原图 + 同名 YOLO txt → `dataset/{images,labels}/{train,val}` + `data.yaml`，校验标注覆盖/类别连续 |
+| `train.py` | YOLO11n（可切 v8n）单类训练，默认 640/100 epoch，水面增强，训完自动导出 ONNX |
+| `check_onnx.py` | 不依赖 ultralytics 的 ONNX 自检（cv2.dnn），IoU0.5 的 P/R/F1/mAP50 + 画框 |
+| `quantize_check.py` | 量化自检：`--k230-dump` 用打包同款校准图编 K230 目标并导出逐层 `ground_truth vs 量化模拟输出`，算 SQNR/余弦（不需要硬件）；默认模式用 CPU 模拟器与 ONNX 逐图对比 |
+| `package_huskylens.py` | **ONNX → nncase 量化 → 安装包 zip**，直接复用官方内核（`data_preparation.py` + `convertor.py`），无 GUI、一条命令出包 |
+| `verify_package.py` | 安装包自检：文件名规范、5 个内部文件、conf/desc 结构、kmodel 文件头、zip CRC（我们生成的包与官方 Model Hub 的 `-DF` 包都能校验） |
+| `dataset_report.py` | 数据集体检：图片/标注配对、标注合法性、框尺寸/长宽比分布、极小/超大框、**train/val 近似重复（泄漏）** |
+| `selftest.py` | 一键环境自检：依赖版本、视觉回归（航向/检测/规划）、训练产物、安装包校验、打包环境、固件构建产物 |
+| `extract_frames.py` | 现场视频抽帧（按步长、模糊度、重复度过滤） |
+| `prelabel.py` | 用现有 ONNX 预标注，人工只做修正（省大量画框时间） |
+| `build_model.py` | 一条命令：划分 → 训练 → 自检 → 量化自检 → 出安装包；`--reuse-onnx` 可只重打包，`--onnx-only` 只出 ONNX（电脑/上位机用途） |
+| `capture_guide.md` | 二哈设备端拍照到 TF 卡的步骤、船头视角拍摄要点 |
+| `README.md` | 端到端 runbook |
+
+> **电脑端顶视模型**：只想用电脑 + 顶部俯拍摄像头时走
+> [`PC_TOPVIEW_MODEL.md`](./PC_TOPVIEW_MODEL.md)，训练加 `--onnx-only` 即可（跳过量化与打包，
+> 产物只有 ONNX），然后用 `config.YOLO_MODEL` 指过去。**视角必须与训练一致**（船头模型不能用在顶视）。
+
+> **视角提醒**：这套模型是按**船头二哈视角**训练的，上位机 `locator.py` 用的是顶端俯拍 UVC，
+> 两者不能混用。PC 侧要用需另采俯拍数据重训（工具链相同，只换数据集）。
+
+**合成数据实测（流水线验证，不代表真实效果）**：YOLO11n，640，25 epoch，batch 8，
+RTX 5060 上 **92 s**；val P 0.946 / R 1.000 / mAP50 0.980；ONNX 自检
+P 0.979 / R 1.000 / F1 0.989 / mAP50 1.000。说明 训练→导出→ONNX 推理→评估 全链路可用，
+真实数据到位后只需换数据集重跑。
+
+**打包链路也已打通并验证**：用合成模型实跑 `package_huskylens.py`，nncase PTQ 生成
+**3.28 MB kmodel**，产出 `溺水人员检测-YOLO11n-det-640.3893.zip`；包内 5 个文件
+（`app.<name>` / `conf.json` / `desc.json` / `icon.png` / `<name>.kmodel`）与从
+官方 Model Hub 下载的安装包（Construction PPE）**逐项一致**，`conf.json`/`desc.json`
+字段结构完全对齐。打包环境：官方源码（Gitee 镜像）+ `nncase 2.10.0` + `nncase_kpu 2.10.0`
+wheel（与官方打包器同版本；实测 2.11.0 与 2.10.0 对 K230 目标产出的 kmodel **字节完全相同**，
+格式为 `LDMK` v7）；nncase 的 hostfxr 声明 .NET 7，本机用
+`DOTNET_ROLL_FORWARD=LatestMajor` 前滚即可，脚本已内置。
+
+**两条补充验证（v1.9 追加）**：
+- **YOLOv8n 分支同样通**：用 `yolov8n.yaml` 随机初始化导出 ONNX（80 类）并切片成 1 类，
+  打包出 `TestV8-YOLOv8n-det-320.197d.zip`，`desc.base_model=yolov8n-det`、结构校验 PASS；
+- **类别数防呆**：`package_huskylens.py` 现在会比对 ONNX 输出类别数与 `data.yaml`，
+  用 80 类 ONNX 配 1 类数据集会直接报错退出（避免打出"框对不上名字"的应用），
+  确认无误可 `--allow-class-mismatch` 跳过。
+
+**量化损失可离线评估（v1.9 追加）**：`quantize_check.py --k230-dump` 用 nncase 的
+`dump_quant_error` 在 K230 目标上导出**每层** `ground_truth vs 量化模拟输出`，计算 SQNR 与余弦。
+合成模型实测：331 层，SQNR 均值 20.4 dB；**最终输出（Concat, 1×5×8400）SQNR 19.8 dB、
+余弦 0.9962 → 通过**（注意力/Softmax 层噪声大但不影响输出）。注意 CPU 目标的 kmodel 不做
+K230 定点量化（约 10 MB vs 3.3 MB），所以 CPU 模式只验证预处理/解码一致性，不用于量化评估。
+
+**负样本修复（v1.9 追加）**：`split_dataset.py --allow-empty-labels` 原来只是**跳过**空标注图，
+负样本实际上进不了数据集（与"负样本占 10~15% 压误检"的采集要求矛盾）。现改为
+**把空 txt 的图片带空标注一起放进数据集**，YOLO 会按背景负样本训练；实测 12 图（10 有框 + 2 空标注）
+可正常训练，`dataset_report.py` 也能统计到「空标注 2」。同时 `dataset_report.py` 加了
+「data.yaml 的 path 指向别处」告警——复制数据集后忘改 path 会静默统计到旧目录。
+
+**硬件上线自检**：`tools/hardware_check.py` 按启动日志 TAG 区分船载主控（`BOAT_*`）与
+桥接板（`BRIDGE_*`）——两者 USB VID/PID 相同，肉眼分不出，烧错会把桥接板刷成主控；
+同时检查二哈 U 盘、可用 `--install` 直接把安装包拷进 `storage/installation_package`。
+
+**上位机也已接上自定义模型（v1.9 追加）**：`config.py` 新增 `YOLO_MODEL`（留空自动找 /
+相对 `models/` 的文件名 / 绝对路径）与 `YOLO_INPUT_SIZE`（必须与训练一致），`locator.py`
+构造检测器时透传。实测：单类 `nc=1` ONNX 经 `detector.py` 的 letterbox+解码+NMS，
+合成验证集 20 张 **P=1.000 / R=1.000**，class 0 约定兼容。**视角限制不变**：船头低角度
+模型不能替代顶部俯拍检测器，PC 俯拍使用需另采数据重训。
+
+#### 3. 固件接入（只改一个宏，或填 0 自动探测）
+
+```c
+// controller-idf/main/shared/boat_controller_config.h
+#define HUSKY_ALGORITHM_ID   3     // 3=内置物体追踪；装了自定义模型后填 0（自动探测）或设备上的 ID（如 131）
+```
+
+**协议层已按官方文档核实**（`HuskyLens2_Protocol_CN.md`，Arduino 库目录下）：
+- **算法 ID 128~255 专门留给用户安装的模型**，1~19 是内置算法；
+- `RETURN_BLOCKS` 的 Data 段前 10 字节固定（ID/AlgoID/xCenter/yCenter/width/height），
+  类名、内容、私有数据都追加在后面 → 驱动只解析前 10 字节，**自定义模型零改动**；
+- `SET_ALGORITHM` 会回 `RETURN_ARGS(retValue=0 成功)` → 固件可据此**自动探测算法 ID**。
+
+- `huskylens_switch_algorithm` / `huskylens_get_result` 参数已改为 `uint8_t`，支持任意算法 ID；
+- `HUSKY_ALGORITHM_ID = 0` 时开机扫描 128~255（每 ID 600 ms 超时、总预算 20 s），
+  找到即用并把 ID 打进日志，找不到回退 3；正常填具体 ID 时行为不变、开机不扫描；
+- `main.c` 用 `_Static_assert` 限制 0~255，启动日志打印「实际算法 ID / 配置值」；
+- **按自定义模型的帧长做了两处加固**（v1.9 追加）：
+  - 分帧状态机确认可跨 16 字节 I2C 读拼帧（512 字节缓冲，整帧收完才 `rx_reset`），
+    带类名的长帧（`drowning_person` → Len 约 27）不会被截断；
+  - 块数据长度门槛从 `len >= 14` 放宽到 **`len >= 12`**（协议最小合法值 = 10 固定字段 +
+    1 类名长度 + 1 内容长度），避免短类名块被丢；
+  - 每次轮询由"固定读 8 批"改为**动态结束**：至少读 4 批、收到结果后连续 2 批无新帧且无半帧才停、
+    上限 12 批（192 B）。常见情况约 20 ms（比原来固定 8×3 ms 更快），多目标时不会截断。
+- 已用显式 IDF 环境重新编译通过（`boat-controller.bin`，836064 B，零警告），未烧录。
+
+#### 4. 现场操作顺序
+
+1. 拍 150–300 张假人照片（二哈相机视角，含逆光/远距/水花/遮挡）+ 20~30 张空水面负样本；
+2. 标注（单类 `drowning_person`）→ `split_dataset.py` → `train.py`（imgsz 640，100 epoch）→ `check_onnx.py` 自检；
+3. 打包（二选一）：`package_huskylens.py --dataset ... --onnx ... --app-name 溺水人员检测`（推荐），
+   或 GUI `HUSKYLENS2_Package_Generator.exe`；任务类型=目标检测、输入 640；
+4. zip 拷到二哈 U 盘 `storage/installation_package` → 设备「模型安装 → 本地安装」；
+5. 设备上读该功能的算法 ID（如 131）→ 改 `HUSKY_ALGORITHM_ID` → `idf.py -p COM10 flash`；
+6. 下水验证：船端日志 `HUSKYLENS 算法 ID=131`、`切换算法 131 成功`，末端 20 cm 停车应基于新模型。
+
+#### 5. 仍需完成
+
+- [ ] 真实数据采集与训练（当前只有合成数据验证）；
+- [ ] 用真实模型生成安装包并装到设备（打包链路已验证，只换输入）；
+- [ ] 读设备算法 ID → 改宏 → 烧录船载主控；
+- [ ] 水面实测误检/漏检，必要时补数据重训（模型域差异是主要风险）。
+
+\*文档版本：v1.9\*
 
 \*适用项目：1.2m×1.2m 微型水上自主搜救演示艇\*
 

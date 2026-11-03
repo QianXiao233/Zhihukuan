@@ -53,8 +53,13 @@ static int clamp_pwm(int v)
     return v;
 }
 
-/** 把 -200..200 映射到 0..1023 并写入，同时设置方向脚 */
-static void apply_motor(int pwm, ledc_channel_t ch, int dir_gpio)
+/** 把 -200..200 映射到 0..1023 并写入，同时设置方向脚。
+ *
+ *  方向脚：与 Arduino 参考实现一致 —— forward -> LOW，reverse -> HIGH，
+ *  但**左右明轮是镜像安装的**，所以其中一侧要按 M*_DIRECTION_INVERTED 取反。
+ *  （参考实现里 M1_DIRECTION_INVERTED = true；ESP-IDF 版最初漏了这一句，
+ *    会导致左轮方向与参考固件相反。） */
+static void apply_motor(int pwm, ledc_channel_t ch, int dir_gpio, bool direction_inverted)
 {
     int v = clamp_pwm(pwm);
     bool forward = (v >= 0);
@@ -67,8 +72,8 @@ static void apply_motor(int pwm, ledc_channel_t ch, int dir_gpio)
     duty = 0;
 #endif
 
-    /* 方向脚：与 Arduino 版一致，forward -> LOW，reverse -> HIGH */
-    gpio_set_level(dir_gpio, forward ? 0 : 1);
+    bool electrical_forward = direction_inverted ? !forward : forward;
+    gpio_set_level(dir_gpio, electrical_forward ? 0 : 1);
     ledc_set_duty(MOTOR_MODE, ch, duty);
     ledc_update_duty(MOTOR_MODE, ch);
 }
@@ -106,8 +111,8 @@ void motors_set(int left, int right)
 {
     s_left = clamp_pwm(left);
     s_right = clamp_pwm(right);
-    apply_motor(s_left, MOTOR_CH_M1, M1_DIR_GPIO);
-    apply_motor(s_right, MOTOR_CH_M2, M2_DIR_GPIO);
+    apply_motor(s_left, MOTOR_CH_M1, M1_DIR_GPIO, M1_DIRECTION_INVERTED);
+    apply_motor(s_right, MOTOR_CH_M2, M2_DIR_GPIO, M2_DIRECTION_INVERTED);
 }
 
 void motors_stop(void)

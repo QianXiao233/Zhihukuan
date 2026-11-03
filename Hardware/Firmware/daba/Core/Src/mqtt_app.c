@@ -10,6 +10,7 @@
 #include "rtc_config.h"
 #include "devices.h"
 #include "sensor_task.h"
+#include "ethernetif.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -80,11 +81,22 @@ static int g_pub_fail = 0;                 /* 连续上报失败次数 */
 static char g_client_id[24] = "rtu_00000000"; /* 唯一 ClientId */
 static volatile int g_last_disc_reason = 0;   /* 最近一次断开原因 */
 static volatile uint32_t g_disc_count = 0;    /* 断连/重连次数 */
+static volatile uint32_t g_last_alive_tick = 0; /* 最近一次“网络正常”的时刻 */
+static volatile uint8_t  g_ever_connected = 0;  /* 本次开机是否成功连过 Broker */
+static volatile uint32_t g_conn_attempts = 0;   /* 连接尝试次数（屏上 C: 前一个数） */
+static volatile uint32_t g_conn_ok = 0;         /* 连接成功次数（屏上 C: 后一个数） */
+static volatile int g_last_conn_err = 0;        /* 最近一次连接结果：0=成功, <0=lwIP err, 1002=10s 握手超时 */
+static uint32_t s_no_ip_since = 0;              /* 链路 UP 但无 IP 的起始时刻 */
+static uint8_t  s_dhcp_retries = 0;             /* DHCP 卡住后的重启次数 */
+
+extern struct netif gnetif;   /* 默认网卡（LWIP/App/lwip.c） */
 
 /* 本地触发的断开原因码（>=1000，避免与 lwIP MQTT 状态码冲突） */
 #define MQTT_DISC_LINK_DOWN      1000
 #define MQTT_DISC_PUB_FAIL       1001
 #define MQTT_DISC_CONN_TIMEOUT   1002
+#define MQTT_DISC_NET_STUCK      1003   /* 链路 UP 但网络卡死 → 触发 ETH+PHY 重初始化 */
+#define MQTT_DISC_CONN_LOST      1004   /* 状态还是 CONNECTED，但 TCP 实际已断 */
 
 /* 用 MCU 唯一 ID 生成 MQTT ClientId（UART/网口多机同 ID 会被 Broker 互踢） */
 static void mqtt_build_client_id(void)
@@ -114,6 +126,53 @@ void MQTT_GetStats(int *last_reason, uint32_t *disc_count)
     }
     if (disc_count != NULL) {
         *disc_count = g_disc_count;
+    }
+}
+
+void MQTT_GetConnectStats(uint32_t *ok_count, uint32_t *attempts)
+{
+    if (ok_count != NULL) {
+        *ok_count = g_conn_ok;
+    }
+    if (attempts != NULL) {
+        *attempts = g_conn_attempts;
+    }
+}
+
+int MQTT_GetLastConnErr(void)
+{
+    return g_last_conn_err;
+}
+
+/* 网络看门狗：由心跳任务每 500ms 调用（心跳任务不依赖网络，卡死也能复位）。
+   - 链路连续断开 60 秒（期间 PHY 已每 6 秒重初始化一次）→ 整机复位
+   - 链路 UP 但 120 秒没有任何成功连接/上报      → 整机复位
+   仅在本次开机成功连过 Broker 后生效，避免机房没网时无限重启。 */
+void MQTT_NetWatchdogTick(void)
+{
+    static uint32_t s_link_down_since = 0U;
+    uint32_t now;
+
+    if (g_ever_connected == 0U) {
+        s_link_down_since = 0U;
+        return;
+    }
+
+    now = HAL_GetTick();
+
+    if (!netif_is_link_up(&gnetif)) {
+        if (s_link_down_since == 0U) {
+            s_link_down_since = now;
+        } else if ((now - s_link_down_since) > 60000U) {
+            LCD_Diag_NetReset();
+            NVIC_SystemReset();
+        }
+    } else {
+        s_link_down_since = 0U;
+        if ((now - g_last_alive_tick) > 60000U) {
+            LCD_Diag_NetReset();
+            NVIC_SystemReset();
+        }
     }
 }
 
@@ -259,6 +318,10 @@ static void mqtt_connection_cb(mqtt_client_t *client, void *arg, mqtt_connection
         }
         osSemaphoreRelease(LcdUpdateSemaphore);
         g_mqtt_state = MQTT_STATE_CONNECTED;
+        g_last_alive_tick = HAL_GetTick();
+        g_ever_connected = 1;
+        g_conn_ok++;
+        g_last_conn_err = 0;   /* 最近一次连接成功 */
         DBG_PRINT("MQTT connected");
     } else {
         g_lcd_state.tcp_connected = 0;
@@ -305,6 +368,12 @@ void MQTT_Publish_Status(void)
         g_relays[6].state, g_relays[7].state,
         temp_str, level_str, ph_str, orp_str);
 
+    /* 链路断开时直接跳过：发送必然失败，还会长时间占着 lwIP 核心锁 */
+    if (!netif_is_link_up(&gnetif)) {
+        if (g_pub_fail < 100) g_pub_fail++;
+        return;
+    }
+
     /* mqtt_publish 会直接改客户端内部的发送环形缓冲，必须持核心锁，
        否则会和 tcpip 线程的发送流程并发、破坏报文（Broker 侧表现为突然断开） */
     LOCK_TCPIP_CORE();
@@ -316,6 +385,7 @@ void MQTT_Publish_Status(void)
 
     if (err == ERR_OK) {
         g_pub_fail = 0;
+        g_last_alive_tick = HAL_GetTick();
         DBG_PRINT("Pub(%d)", n);
     } else {
         if (g_pub_fail < 100) g_pub_fail++;
@@ -360,6 +430,7 @@ static err_t connect_to_broker(void)
     err = mqtt_client_connect(g_mqtt_client, &ipaddr, cfg.port,
                               mqtt_connection_cb, NULL, &ci);
     UNLOCK_TCPIP_CORE();
+    g_last_conn_err = (int)err;   /* 0=已发出握手；<0=lwIP 直接失败（如 -4 无路由） */
     return err;
 }
 
@@ -397,6 +468,26 @@ void MQTT_Client_Task(void *argument)
     g_mqtt_state = MQTT_STATE_CONNECT;
 
     for (;;) {
+        /* ---- 网络自愈看门狗 ----
+           链路显示 UP，但连续 20 秒既没连上、也没成功发出数据，
+           说明 MAC/DMA 或 PHY 已被干扰卡死（强电干扰典型现象）。
+           请求 EthLink 线程做一次完整的 ETH+PHY 重新初始化，
+           这样不需要人工断电/拔插网线。 */
+        if ((g_mqtt_state != MQTT_STATE_CONNECTED) && g_ever_connected &&
+            netif_is_link_up(&gnetif)) {
+            /* 独立计时：不能覆盖 g_last_alive_tick，否则心跳任务的
+               “60 秒真正无网络 → 整机复位”永远等不到（一直不复位的根因） */
+            static uint32_t last_recover_req = 0U;
+            uint32_t alive_now = HAL_GetTick();
+            if ((last_recover_req == 0U) ||
+                ((alive_now - last_recover_req) > 20000U)) {
+                last_recover_req = alive_now;
+                g_last_disc_reason = MQTT_DISC_NET_STUCK;
+                ethernetif_request_link_recover();
+                DBG_PRINT("net watchdog: ETH/PHY recover");
+            }
+        }
+
         switch (g_mqtt_state) {
             case MQTT_STATE_CONNECT: {
                 /* 链路不通则等待，避免无意义的连接尝试 */
@@ -406,19 +497,37 @@ void MQTT_Client_Task(void *argument)
                 }
                 /* DHCP：等路由器分配 IP 后再连 Broker（0.0.0.0 = 尚未拿到地址） */
                 if (ip4_addr_isany_val(*netif_ip4_addr(&gnetif))) {
-                    /* 没有 DHCP 客户端（初始 dhcp_start 失败）时重试，5 秒一次 */
-                    static uint32_t last_dhcp_try = 0;
-                    if (netif_dhcp_data(&gnetif) == NULL &&
-                        (last_dhcp_try == 0 || HAL_GetTick() - last_dhcp_try >= 5000)) {
-                        last_dhcp_try = HAL_GetTick();
-                        LOCK_TCPIP_CORE();
-                        dhcp_start(&gnetif);
-                        UNLOCK_TCPIP_CORE();
-                        DBG_PRINT("retry dhcp_start");
+                    /* 启动/恢复阶段 DHCP 卡住的兜底：
+                       链路已 UP 但 10 秒仍拿不到 IP，就强制重启 DHCP 客户端；
+                       连续 3 次仍失败，再请求一次完整 ETH+PHY 重新初始化。
+                       这能覆盖“上电时 DHCP 状态机卡死、之后一直等不到地址”的软件问题。 */
+                    uint32_t now = HAL_GetTick();
+
+                    if (s_no_ip_since == 0U) {
+                        s_no_ip_since = now;
+                    } else if ((now - s_no_ip_since) > 10000U) {
+                        s_no_ip_since = now;
+                        if (s_dhcp_retries < 3U) {
+                            s_dhcp_retries++;
+                            LOCK_TCPIP_CORE();
+                            if (netif_dhcp_data(&gnetif) != NULL) {
+                                dhcp_release_and_stop(&gnetif);
+                            }
+                            (void)dhcp_start(&gnetif);
+                            UNLOCK_TCPIP_CORE();
+                            DBG_PRINT("dhcp stuck, restart (%d)", (int)s_dhcp_retries);
+                        } else {
+                            s_dhcp_retries = 0U;
+                            ethernetif_request_link_recover();
+                            DBG_PRINT("dhcp stuck, recover ETH/PHY");
+                        }
                     }
                     osDelay(500);
                     break;
                 }
+                /* 拿到 IP：清空 DHCP 兜底状态 */
+                s_no_ip_since = 0U;
+                s_dhcp_retries = 0U;
                 /* 拿到 DHCP 地址后打印一次，便于现场确认 */
                 {
                     static uint8_t ip_logged = 0;
@@ -429,6 +538,7 @@ void MQTT_Client_Task(void *argument)
                         ip_logged = 1;
                     }
                 }
+                g_conn_attempts++;
                 if (connect_to_broker() == ERR_OK) {
                     g_connect_start_tick = HAL_GetTick();
                     g_mqtt_state = MQTT_STATE_CONNECTING;  /* 异步连接中，等回调 */
@@ -443,6 +553,7 @@ void MQTT_Client_Task(void *argument)
                 /* 等待回调切换状态（CONNECTED 或 RECONNECT），并检测连接超时 */
                 if ((HAL_GetTick() - g_connect_start_tick) >= CONNECT_TIMEOUT_MS) {
                     DBG_PRINT("MQTT connect timeout, retry...");
+                    g_last_conn_err = MQTT_DISC_CONN_TIMEOUT;  /* 1002: TCP 握手无响应 */
                     g_mqtt_state = MQTT_STATE_RECONNECT;
                 }
                 osDelay(100);
@@ -456,6 +567,21 @@ void MQTT_Client_Task(void *argument)
                     g_last_disc_reason = MQTT_DISC_LINK_DOWN;
                     g_mqtt_state = MQTT_STATE_RECONNECT;
                     break;
+                }
+                /* 状态机还认为已连接，但底层 TCP 已经断了（对端静默断开、
+                   DMA 卡死等）：立即走重连，不要等发布失败计数。 */
+                {
+                    uint8_t alive;
+                    LOCK_TCPIP_CORE();
+                    alive = (uint8_t)((g_mqtt_client != NULL) &&
+                                      mqtt_client_is_connected(g_mqtt_client));
+                    UNLOCK_TCPIP_CORE();
+                    if (!alive) {
+                        DBG_PRINT("MQTT TCP lost, reconnect");
+                        g_last_disc_reason = MQTT_DISC_CONN_LOST;
+                        g_mqtt_state = MQTT_STATE_RECONNECT;
+                        break;
+                    }
                 }
                 /* 连接建立后订阅一次控制话题 */
                 if (!g_subscribed && g_mqtt_client != NULL) {

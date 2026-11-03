@@ -53,6 +53,7 @@ void LCD_Diag_Init(void)
         g_diag.ovf_count = 0;
         g_diag.ovf_task[0] = '\0';
         g_diag.cfg_reset = 0;
+        g_diag.net_reset = 0;
         memset(&s_diag_view, 0, sizeof(s_diag_view));
         return;
     }
@@ -61,11 +62,13 @@ void LCD_Diag_Init(void)
     s_diag_view.ovf_count = g_diag.ovf_count;
     diag_copy_name(s_diag_view.ovf_task, g_diag.ovf_task, sizeof(s_diag_view.ovf_task));
     s_diag_view.cfg_reset = g_diag.cfg_reset;
+    s_diag_view.net_reset = g_diag.net_reset;
     s_diag_view.crash_stage = g_diag.stage;
 
     g_diag.ovf_count = 0;
     g_diag.ovf_task[0] = '\0';
     g_diag.cfg_reset = 0;
+    g_diag.net_reset = 0;
     g_diag.stage = 0;
 }
 
@@ -96,4 +99,12 @@ void LCD_Diag_ConfigReset(void)
         g_diag.magic = LCD_DIAG_MAGIC;
     }
     g_diag.cfg_reset = 1;
+}
+
+void LCD_Diag_NetReset(void)
+{
+    if (g_diag.magic != LCD_DIAG_MAGIC) {
+        g_diag.magic = LCD_DIAG_MAGIC;
+    }
+    g_diag.net_reset = 1;
 }

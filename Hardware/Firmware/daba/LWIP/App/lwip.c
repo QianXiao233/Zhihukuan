@@ -30,6 +30,7 @@
 
 /* USER CODE BEGIN 0 */
 #include <stdio.h>
+#include "lcd_state.h"
 /* USER CODE END 0 */
 /* Private function prototypes -----------------------------------------------*/
 static void ethernet_link_status_updated(struct netif *netif);
@@ -146,14 +147,20 @@ void MX_LWIP_Init(void)
   */
 static void ethernet_link_status_updated(struct netif *netif)
 {
-  if (netif_is_up(netif))
+  /* 注意：这是“链路”回调，必须用 netif_is_link_up() 判断；
+     netif 本身始终是 up 的，用 netif_is_up() 会永远为真。 */
+  if (netif_is_link_up(netif))
   {
 /* USER CODE BEGIN 5 */
+    /* 链路恢复：立即刷新屏幕（LCD 上可看到 LINK:UP 与自愈计数） */
+    osSemaphoreRelease(LcdUpdateSemaphore);
 /* USER CODE END 5 */
   }
-  else /* netif is down */
+  else /* link is down */
   {
 /* USER CODE BEGIN 6 */
+    /* 链路断开：立即刷新屏幕 */
+    osSemaphoreRelease(LcdUpdateSemaphore);
 /* USER CODE END 6 */
   }
 }

@@ -234,7 +234,12 @@ static void rx_feed(uint8_t b)
             /* 新一轮结果开始：清空上一轮块 */
             s_block_count = 0;
             s_got_any = true;
-        } else if (cmd == HUSKY_CMD_RETURN_BLOCKS && len >= 14) {
+        } else if (cmd == HUSKY_CMD_RETURN_BLOCKS && len >= 12) {
+            /* 固定字段：data[0]=块ID data[1]=算法ID，data[2..9]=x/y/w/h（各 int16 小端），
+             * 共 10 字节。协议规定 Data 段 = 10 + 1(name长度) + n + 1(content长度) + m，
+             * 所以**最小合法 Len = 12**（类名/内容都为空）。
+             * 自定义模型的块会追加类名字符串，只会让 Len 更大，前 10 字节偏移不变 --
+             * 这里只取前 10 字节，内置算法和自定义模型走同一路径。 */
             if (s_block_count < HUSKY_MAX_BLOCKS) {
                 husky_block_t *blk = &s_blocks[s_block_count++];
                 blk->id       = data[0];
@@ -253,8 +258,11 @@ static void rx_feed(uint8_t b)
 
 /* ================= 协议层 ================= */
 
-/** 组装并发送一帧 */
-static bool send_command(uint8_t cmd, husky_algorithm_t algo, const uint8_t *data, uint8_t len)
+/** 组装并发送一帧
+ *
+ * algo 用 uint8_t：协议帧 [3] 就是单字节 AlgoID，内置算法 1~19、自定义模型
+ * 可能是 128+（如 131），枚举装不下，所以这里不接收 husky_algorithm_t。 */
+static bool send_command(uint8_t cmd, uint8_t algo, const uint8_t *data, uint8_t len)
 {
     uint8_t frame[64];
     if ((size_t)len + 6 > sizeof(frame)) return false;
@@ -385,7 +393,9 @@ bool huskylens_begin(void)
     return ok;
 }
 
-bool huskylens_switch_algorithm(husky_algorithm_t algo)
+/* 切换算法的内部实现：扫描时用更短的延时/超时/单次尝试，避免每个无效 ID 都等 800ms */
+static bool switch_algorithm_timed(uint8_t algo, uint32_t pre_delay_ms, uint32_t timeout_ms,
+                                   int attempts, bool verbose)
 {
     if (!s_ready) return false;
 
@@ -393,21 +403,55 @@ bool huskylens_switch_algorithm(husky_algorithm_t algo)
     uint8_t data[10] = {0};
     data[0] = (uint8_t)algo;
 
-    /* 二哈切换算法需要时间，且刚握手完可能还没准备好接收。
-       实测单次发送常失败，所以加延时 + 重试（与原库 retry 语义一致）。 */
     bool ok = false;
-    for (int attempt = 0; attempt < 3 && !ok; attempt++) {
-        vTaskDelay(pdMS_TO_TICKS(150));
+    for (int attempt = 0; attempt < attempts && !ok; attempt++) {
+        vTaskDelay(pdMS_TO_TICKS(pre_delay_ms));
         rx_reset();
         if (!send_command(HUSKY_CMD_SET_ALGORITHM, algo, data, sizeof(data))) break;
-        ok = wait_for_command(HUSKY_CMD_RETURN_ARGS, true, 800);
+        ok = wait_for_command(HUSKY_CMD_RETURN_ARGS, true, timeout_ms);
     }
 
-    ESP_LOGI(TAG, "切换算法 %d %s", (int)algo, ok ? "成功" : "失败");
+    if (verbose) {
+        ESP_LOGI(TAG, "切换算法 %d %s", (int)algo, ok ? "成功" : "失败");
+    }
     return ok;
 }
 
-bool huskylens_get_result(husky_algorithm_t algo)
+bool huskylens_switch_algorithm(uint8_t algo)
+{
+    /* 二哈切换算法需要时间，且刚握手完可能还没准备好接收。
+       实测单次发送常失败，所以加延时 + 重试（与原库 retry 语义一致）。 */
+    return switch_algorithm_timed(algo, 150, 800, 3, true);
+}
+
+uint8_t huskylens_find_user_algorithm(uint8_t first, uint8_t last, uint32_t budget_ms)
+{
+    if (!s_ready || first == 0 || last < first) return 0;
+
+    uint32_t started = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    ESP_LOGI(TAG, "扫描用户模型算法 ID %u~%u（预算 %lu ms）",
+             (unsigned)first, (unsigned)last, (unsigned long)budget_ms);
+
+    for (uint32_t id = first; id <= last; id++) {
+        uint32_t elapsed = (xTaskGetTickCount() * portTICK_PERIOD_MS) - started;
+        if (elapsed > budget_ms) {
+            ESP_LOGW(TAG, "算法 ID 扫描超时（%lu ms），未找到用户模型",
+                     (unsigned long)elapsed);
+            return 0;
+        }
+        /* 单次尝试失败不重试：无效 ID 通常会很快回 RETURN_ARGS(retValue!=0)。
+           超时给 600ms，容忍二哈切换算法的响应延迟；整个扫描受 budget_ms 约束。 */
+        if (switch_algorithm_timed((uint8_t)id, 20, 600, 2, false)) {
+            ESP_LOGW(TAG, "发现用户模型算法 ID=%lu（用时 %lu ms）",
+                     (unsigned long)id, (unsigned long)elapsed);
+            return (uint8_t)id;
+        }
+    }
+    ESP_LOGW(TAG, "用户模型段 %u~%u 内没有可用算法", (unsigned)first, (unsigned)last);
+    return 0;
+}
+
+bool huskylens_get_result(uint8_t algo)
 {
     if (!s_ready) return false;
 
@@ -418,11 +462,25 @@ bool huskylens_get_result(husky_algorithm_t algo)
     if (!send_command(HUSKY_CMD_GET_RESULT, algo, NULL, 0)) return false;
 
     /* 返回序列为 RETURN_INFO + RETURN_BLOCKS... + RETURN_ARROWS...
-       固定读若干批（每批 16 字节）覆盖整轮结果。
-       不按"收到 INFO 就退出"，因为块数据在 INFO 之后才到。 */
-    for (int i = 0; i < 8; i++) {
-        if (!i2c_drain_once() && i > 0 && s_got_any) break;
-        vTaskDelay(pdMS_TO_TICKS(3));
+       每批读 16 字节；帧可以跨批拼接（状态机保留半帧）。
+       原来的"固定读 8 批"是按内置算法的短帧调的；自定义模型的块带类名字段，
+       帧更长、多目标时序列也更长，所以改成**动态结束**：
+         - 至少读 4 批（给设备留出出结果的时间）；
+         - 收到过结果后，连续 2 批既没有新完整帧、也没有半帧在途，才认为读完；
+         - 上限 12 批（192 字节）。
+       常见情况 5~6 批（约 20 ms），比原来固定 8×3 ms 更快；多目标也不会截断。 */
+    uint32_t seq_seen = s_frame_seq;
+    int idle = 0;
+    for (int i = 0; i < 12; i++) {
+        i2c_drain_once();
+        if (s_frame_seq != seq_seen) {
+            seq_seen = s_frame_seq;
+            idle = 0;
+        } else {
+            idle++;
+        }
+        if (s_got_any && s_rx_len == 0 && idle >= 2 && i >= 3) break;
+        vTaskDelay(pdMS_TO_TICKS(2));
     }
 
     return s_got_any;

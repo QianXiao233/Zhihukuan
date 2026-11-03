@@ -25,6 +25,17 @@
 #define STATUS_HEADER_0           0x5A
 #define STATUS_HEADER_1           0xA5
 
+/* mission_state 取值（与船端 link_protocol.h、serial-service/protocol.js 一致）。
+   桥接板需要按状态调整 ESP-NOW 转发策略：
+     - 释放(2)   ：不可逆动作，必须立即转发，不能等 500 ms 定时，否则会被"采样漏掉"
+     - 自主(1)   ：闭环控制，转发周期收紧到 10 Hz（船端 PID 按 20 Hz 整定）
+     - 其余      ：保持 500 ms，降低射频发热 */
+#define MISSION_IDLE              0
+#define MISSION_AUTONOMOUS        1
+#define MISSION_RELEASE           2
+#define MISSION_RETURN            3
+#define MISSION_MANUAL            4
+
 /* 电脑命令超时：超过此时间未收到有效命令，则把待发命令归零（保持链路但不动船） */
 #define HOST_COMMAND_TIMEOUT_MS   300
 

@@ -40,6 +40,26 @@ static const char *TAG = "BRIDGE_ESPNOW";
 #define SEND_INTERVAL_MS 500
 
 /**
+ * 自主航行期间的转发周期（毫秒）。
+ *
+ * 为什么需要单独一档：船端是**闭环控制**（用电脑下发的航向做 PID，PID 参数按
+ * 20 Hz 整定）。500 ms 一帧意味着 2 Hz 的控制带宽，一次修正要等半秒才看到效果，
+ * 表现为"修正过头 → 反向修正"的摆动。自主航行的持续时间很短，把这一档收到
+ * 10 Hz 的发热代价可以接受；待机/手动仍保持 500 ms。
+ */
+#define SEND_INTERVAL_AUTONOMOUS_MS 100
+
+/**
+ * 释放帧的最小间隔（毫秒）。
+ *
+ * 投放是不可逆动作，**不能**等 500 ms 的定时转发去采样：串口侧只在 600 ms 窗口内
+ * 发释放帧，定时器有大概率的相位落空，"点了投放船没反应"就是这么来的。
+ * 这里改成"释放帧立即转发"，只限到 20 Hz 防止串口重发把射频打满。
+ * 重复触发由船端"动作进行中忽略"兜底。
+ */
+#define SEND_INTERVAL_RELEASE_MS 50
+
+/**
  * 射频发射功率（单位 0.25 dBm，范围 8~84，即 2~20 dBm）。
  * 40 = 10 dBm。船距离桥接板只有 1~2 米，远不需要默认的 20 dBm（100 mW）；
  * 发射功率与功放耗电近似线性，降到 10 dBm 能显著减少发热。
@@ -174,8 +194,20 @@ void espnow_bridge_send_command(const ground_to_boat_t *command)
 {
     if (command == NULL) return;
 
+    /* 按任务状态选择转发周期：
+       释放 -> 立即（50 ms 下限），自主 -> 100 ms，其余 -> 500 ms 保温。
+       注意 s_last_send_ms 只在**发送成功回调**里更新，所以发送失败会自动重试。 */
+    uint32_t interval;
+    if (command->mission_state == MISSION_RELEASE || command->release_flag != 0) {
+        interval = SEND_INTERVAL_RELEASE_MS;
+    } else if (command->mission_state == MISSION_AUTONOMOUS) {
+        interval = SEND_INTERVAL_AUTONOMOUS_MS;
+    } else {
+        interval = SEND_INTERVAL_MS;
+    }
+
     uint32_t t = now_ms();
-    if (t - s_last_send_ms < SEND_INTERVAL_MS) return;
+    if (t - s_last_send_ms < interval) return;
 
     esp_now_send(BOAT_CONTROLLER_MAC, (const uint8_t *)command, sizeof(*command));
 }

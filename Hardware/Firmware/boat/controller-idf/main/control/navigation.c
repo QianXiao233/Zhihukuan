@@ -6,16 +6,47 @@
 #include <math.h>
 
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
 #include "motors.h"
 
 static const char *TAG = "BOAT_NAV";
 
 /* ---------------- 参数（与原 Arduino 版一致） ---------------- */
-#define COARSE_ARRIVAL_RADIUS_M   0.40f   /* 进入该半径切换二哈精细靠近 */
+#define COARSE_ARRIVAL_RADIUS_M   0.15f   /* 进入该半径切换二哈精细靠近。
+                                             * 注意：二哈未接入/未识别到目标时，进入末端会
+                                             * 依赖 target_seen，看不到就停车或原地搜索。
+                                             * 上位机坐标已经足够准的场合可以把这个值调小，
+                                             * 让坐标导航一直开到很近。 */
 #define VISUAL_STOP_DISTANCE_M    0.20f   /* 视觉测距到该值停车 */
-#define VISION_FRAME_CENTER_PX    320.0f  /* 画面横向中心 */
+#define VISION_FRAME_CENTER_PX    320.0f  /* 画面横向中心（HUSKYLENS 2 为 640x480） */
+
+/* 末端阶段丢目标的处理节奏。
+ * 原实现是"看不到目标就停车并永久停住"，二哈没连上 / 目标在船后方 / 被船身挡住时
+ * 船会卡在离目标 40 cm 的地方，救援直接中断。现在分三档：
+ *   短暂丢帧   -> 先停车，避免盲冲
+ *   持续 1.5 s -> 原地慢速旋转搜索
+ *   持续 8 s   -> 放弃末端阶段，退回坐标导航重新对准（带 3 s 冷却，防止来回抖动）
+ */
+#define VISUAL_LOST_SEARCH_MS     1500
+#define VISUAL_LOST_GIVEUP_MS     8000
+#define VISUAL_REACQUIRE_COOLDOWN_MS 3000
 
 /* PID */
+/* ---- 速度参数（现场按池子大小/水阻调，直接改这里）----
+ * MOTOR_PWM_MAX 是 ±200；下面这些是"基础速度"，实际输出还会叠加转向修正。
+ * 1.2 m 的沙盘池里 100 已经偏快（船头到池壁不到 0.6 m），起步建议 55~70。
+ */
+#define NAV_CRUISE_SPEED        60    /* 坐标导航基础速度（远距离巡航） */
+#define NAV_CRUISE_LIMIT        110   /* 巡航时单轮上限 */
+#define NAV_SLOW_RADIUS_M       0.45f /* 进入该半径开始减速，避免贴脸冲 */
+#define NAV_SLOW_SPEED          40    /* 减速后的基础速度 */
+#define NAV_SLOW_LIMIT          80
+#define NAV_TURN_GAIN           1.2f  /* 转向修正增益（越小越柔和） */
+#define NAV_VISUAL_SPEED        45    /* 二哈末端阶段的推进速度 */
+#define NAV_VISUAL_LIMIT        85
+
 static const float KP = 2.0f;
 static const float KI = 0.0f;
 static const float KD = 0.5f;
@@ -28,6 +59,13 @@ static bool  s_visual_active;
 static bool  s_approach_initialized;
 static float s_approach_x;
 static float s_approach_y;
+static uint32_t s_visual_lost_ms;          /* 本次连续丢目标的起始时刻（0 = 没丢） */
+static uint32_t s_visual_cooldown_until_ms;/* 放弃末端后的重新进入冷却截止时刻 */
+
+static uint32_t now_ms(void)
+{
+    return xTaskGetTickCount() * portTICK_PERIOD_MS;
+}
 
 static int clamp_int(int v, int lo, int hi)
 {
@@ -49,6 +87,8 @@ void navigation_reset(void)
     s_last_error = 0;
     s_visual_active = false;
     s_approach_initialized = false;
+    s_visual_lost_ms = 0;
+    s_visual_cooldown_until_ms = 0;
 }
 
 bool navigation_data_valid(const ground_to_boat_t *cmd)
@@ -127,8 +167,14 @@ void navigation_autonomous(const ground_to_boat_t *cmd,
     float dy = cmd->target_y - cmd->boat_y;
     float dist = sqrtf(dx * dx + dy * dy);
 
-    if (!s_visual_active && dist <= COARSE_ARRIVAL_RADIUS_M) {
+    uint32_t t = now_ms();
+
+    /* 进入末端区域的判据；放弃末端后有 3 s 冷却，避免"刚退回坐标导航又立刻切回"
+       在两个状态之间来回抖。 */
+    if (!s_visual_active && dist <= COARSE_ARRIVAL_RADIUS_M &&
+        (int32_t)(t - s_visual_cooldown_until_ms) >= 0) {
         s_visual_active = true;
+        s_visual_lost_ms = 0;
         s_integral = 0;
         s_last_error = 0;
         ESP_LOGI(TAG, "进入末端区域（%.2f m），切换二哈精细靠近", dist);
@@ -137,17 +183,39 @@ void navigation_autonomous(const ground_to_boat_t *cmd,
     /* ---- 末端视觉阶段 ---- */
     if (s_visual_active) {
         if (!target_seen) {
-            motors_stop();
+            if (s_visual_lost_ms == 0) s_visual_lost_ms = t;
+            uint32_t lost = t - s_visual_lost_ms;
+
+            if (lost >= VISUAL_LOST_GIVEUP_MS) {
+                /* 长时间看不到目标（二哈没连上/目标在船后/被船身挡住）：
+                   不再原地死等，退回坐标导航重新对准。 */
+                s_visual_active = false;
+                s_visual_lost_ms = 0;
+                s_integral = 0;
+                s_last_error = 0;
+                s_visual_cooldown_until_ms = t + VISUAL_REACQUIRE_COOLDOWN_MS;
+                ESP_LOGW(TAG, "末端 %lu ms 未见目标，退回坐标导航重新对准",
+                         (unsigned long)lost);
+            } else if (lost >= VISUAL_LOST_SEARCH_MS) {
+                /* 原地慢速旋转搜索：左轮前进、右轮后退 = 向右转 */
+                motors_set(45, -45);
+                return;
+            } else {
+                /* 刚丢帧：先停车，避免按旧画面盲冲 */
+                motors_stop();
+                return;
+            }
+        } else {
+            s_visual_lost_ms = 0;
+            if (vision_dist <= VISUAL_STOP_DISTANCE_M) {
+                motors_stop();
+                return;
+            }
+            float local_error = (target_x_px - VISION_FRAME_CENTER_PX) / VISION_FRAME_CENTER_PX;
+            int correction = (int)(local_error * 90.0f);
+            drive_differential(NAV_VISUAL_SPEED, correction, NAV_VISUAL_LIMIT);
             return;
         }
-        if (vision_dist <= VISUAL_STOP_DISTANCE_M) {
-            motors_stop();
-            return;
-        }
-        float local_error = (target_x_px - VISION_FRAME_CENTER_PX) / VISION_FRAME_CENTER_PX;
-        int correction = (int)(local_error * 90.0f);
-        drive_differential(75, correction, 140);
-        return;
     }
 
     /* ---- 坐标导航阶段（航向 PID） ---- */
@@ -164,7 +232,14 @@ void navigation_autonomous(const ground_to_boat_t *cmd,
     float correction = KP * error + KI * s_integral + KD * derivative;
     s_last_error = error;
 
-    drive_differential(100, (int)correction, 180);
+    /* 按距离分档减速：远距离巡航、快接近时降速，避免到点前冲过头撞池壁 */
+    int base_speed = (dist <= NAV_SLOW_RADIUS_M) ? NAV_SLOW_SPEED : NAV_CRUISE_SPEED;
+    int limit      = (dist <= NAV_SLOW_RADIUS_M) ? NAV_SLOW_LIMIT : NAV_CRUISE_LIMIT;
+    /* 转向修正限幅，避免误差大时一侧轮子打满导致原地打转 */
+    int corr = (int)(correction * NAV_TURN_GAIN);
+    if (corr >  limit) corr =  limit;
+    if (corr < -limit) corr = -limit;
+    drive_differential(base_speed, corr, limit);
 }
 
 /**

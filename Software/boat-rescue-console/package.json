@@ -7,6 +7,7 @@
     "dev": "concurrently -k \"npm:server\" \"vite --host 127.0.0.1\"",
     "server": "node serial-service/index.js",
     "build": "vite build",
+    "build:static": "vite build",
     "test:protocol": "node serial-service/protocol.test.js",
     "preview": "vite preview --host 0.0.0.0"
   },

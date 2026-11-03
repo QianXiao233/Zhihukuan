@@ -25,8 +25,15 @@
 #include "hw/huskylens.h"
 #include "hw/motors.h"
 #include "hw/servo_release.h"
+#include "shared/boat_controller_config.h"
 
 static const char *TAG = "BOAT_MAIN";
+
+/* HUSKY_ALGORITHM_ID 最终会写进协议帧的单字节 AlgoID 字段，必须是 0~255。
+ * 填错（例如误写成 16 进制 0x1FF 之类）在这里就编译失败，省得现场只看到
+ * "切换算法失败"却查不出原因。 */
+_Static_assert(HUSKY_ALGORITHM_ID >= 0 && HUSKY_ALGORITHM_ID <= 255,
+               "HUSKY_ALGORITHM_ID 必须是 0~255（协议 AlgoID 只有 1 字节）");
 
 /* ---------------- 参数（与原版一致） ---------------- */
 #define COMM_TIMEOUT_MS          3000    /* 超过 3 秒没收到桥接板数据 -> 应急 */
@@ -35,7 +42,18 @@ static const char *TAG = "BOAT_MAIN";
 #define HUSKY_INIT_TIMEOUT_MS    3000    /* 二哈握手最长等待 */
 #define MAIN_LOOP_MS             50      /* 主循环 20 Hz */
 
-/* 单目测距参数（与原版一致，需按实际目标尺寸标定） */
+/* 单目测距参数：distance = OBSTACLE_REAL_WIDTH * FOCAL_LENGTH / 像素宽
+ *
+ * 这两个数**不是通用常数**，必须按现场标定，否则"20 cm 停车"会整体偏移：
+ *   - OBSTACLE_REAL_WIDTH 填当前被救目标（救生圈/浮球）的**真实宽度**（米）。
+ *     填 0.10 而实际目标只有 0.05 宽 -> 会在 40 cm 就停；实际 0.20 宽 -> 会顶到
+ *     10 cm 才停。
+ *   - FOCAL_LENGTH 用一次实测反推：把目标放在已知距离 D 处，读日志里的像素宽
+ *     W_px，则 FOCAL = D * W_px / OBSTACLE_REAL_WIDTH。
+ *
+ * 另外这个距离是"到目标表面"，没有扣除船头到二哈镜头的前伸量；
+ * 要更准的话把 VISUAL_STOP_DISTANCE_M 加上这段前伸量。
+ */
 #define FOCAL_LENGTH             500.0f
 #define OBSTACLE_REAL_WIDTH      0.10f
 
@@ -45,10 +63,23 @@ static boat_to_ground_t s_status;
 static bool s_emergency;
 static bool s_radio_ready;
 
+/* 本次实际使用的二哈算法 ID。
+ * HUSKY_ALGORITHM_ID 非 0 时就是它；等于 0 时表示"自动扫描用户模型段（128~255）"，
+ * 由 resolve_algorithm_id() 在二哈就绪后填入。*/
+static uint8_t s_algo_id = HUSKY_ALGORITHM_ID;
+static bool s_algo_resolved;
+
 static uint32_t s_last_husky_ms;
 static uint32_t s_last_debug_ms;
 
-/* 二哈状态 */
+/* 二哈状态
+ *
+ * s_target_seen：最近一次结果里"有目标框"。
+ *   - 默认算法（HUSKY_ALGORITHM_ID=3，内置物体追踪）：表示追踪到了目标；
+ *   - 换成设备上部署的自定义模型后：表示"当前帧检测到至少一个目标框"。
+ *     驱动只解析 id/algo/x/y/w/h 前 10 字节，自定义模型的类别名不参与解析，
+ *     所以这里不区分类别 —— 只要框存在就算"看到目标"，下游导航/测距逻辑不变。
+ */
 static bool s_target_seen;
 static int  s_target_x;
 static int  s_target_y;
@@ -71,7 +102,9 @@ static void husky_poll(void)
     s_vision_dist = 999.0f;
 
     if (!huskylens_is_ready()) return;
-    if (!huskylens_get_result(ALGO_OBJECT_TRACKING)) return;
+    /* s_algo_id 由 resolve_algorithm_id() 解析：
+       配置非 0 时就是配置值；配置为 0 时是自动探测到的用户模型 ID（找不到回退 3）。 */
+    if (!huskylens_get_result(s_algo_id)) return;
 
     /* 取面积最大的块，避免误锁小噪点 */
     int best = -1;
@@ -105,6 +138,33 @@ static void husky_poll(void)
     }
 }
 
+/** 解析本次使用的算法 ID。
+ *
+ *  HUSKY_ALGORITHM_ID != 0：直接用配置值（3=内置物体追踪，或自定义模型 ID 如 131）。
+ *  HUSKY_ALGORITHM_ID == 0：自动扫描用户模型段 128~255（协议规定该段属于用户安装模型），
+ *  找到就用它，找不到回退内置物体追踪。扫描有 12s 预算，不会把开机卡死。 */
+static void resolve_algorithm_id(void)
+{
+    s_algo_id = HUSKY_ALGORITHM_ID;
+    if (HUSKY_ALGORITHM_ID != 0) {
+        s_algo_resolved = true;
+        return;
+    }
+    if (!huskylens_is_ready()) return;
+
+    ESP_LOGI(TAG, "HUSKY_ALGORITHM_ID=0：自动探测已安装的自定义模型");
+    uint8_t found = huskylens_find_user_algorithm(128, 255, 20000);
+    if (found) {
+        s_algo_id = found;
+        ESP_LOGI(TAG, "自动探测成功，算法 ID=%d（建议把它写进 HUSKY_ALGORITHM_ID 以跳过开机扫描）",
+                 (int)found);
+    } else {
+        s_algo_id = (uint8_t)ALGO_OBJECT_TRACKING;
+        ESP_LOGW(TAG, "未探测到用户模型，回退内置物体追踪（算法 ID=%d）", (int)s_algo_id);
+    }
+    s_algo_resolved = true;
+}
+
 /** 二哈初始化：带超时的握手里程碑。
  *  注意：只在启动时尝试一次是不够的 —— 二哈有启动时间，若它比主控晚就绪，
  *  启动窗口内会读到全 0xFF（从机未驱动总线）。所以这里只做"启动时快试"，
@@ -118,9 +178,11 @@ static void husky_init_with_timeout(void)
     }
 
     if (huskylens_is_ready()) {
-        huskylens_switch_algorithm(ALGO_OBJECT_TRACKING);
+        resolve_algorithm_id();
+        huskylens_switch_algorithm(s_algo_id);
         vTaskDelay(pdMS_TO_TICKS(500));
-        ESP_LOGI(TAG, "HUSKYLENS 2 初始化成功");
+        ESP_LOGI(TAG, "HUSKYLENS 2 初始化成功（算法 ID=%d，配置=%d）",
+                 (int)s_algo_id, (int)HUSKY_ALGORITHM_ID);
     } else {
         ESP_LOGW(TAG, "HUSKYLENS 2 暂未就绪，将在运行中继续尝试连接");
     }
@@ -140,9 +202,10 @@ static void husky_retry_if_needed(void)
 
     if (huskylens_begin()) {
         ESP_LOGI(TAG, "HUSKYLENS 2 已连接（运行期重试成功）");
+        if (!s_algo_resolved) resolve_algorithm_id();
         if (!logged_ok) {
             logged_ok = true;
-            huskylens_switch_algorithm(ALGO_OBJECT_TRACKING);
+            huskylens_switch_algorithm(s_algo_id);
         }
     } else {
         /* 首次重试仍失败时输出一次通信诊断（内部保证只报一次），
@@ -226,6 +289,10 @@ static void debug_print(void)
 void app_main(void)
 {
     ESP_LOGI(TAG, "DFR1063 启动（ESP-IDF）");
+    /* 打印实际下发的算法 ID，方便现场确认用的是内置算法还是自定义模型。
+       若与设备 UI 上看到的不一致，改 shared/boat_controller_config.h 里的
+       HUSKY_ALGORITHM_ID 后重新编译。 */
+    ESP_LOGI(TAG, "HUSKYLENS 算法 ID=%d（HUSKY_ALGORITHM_ID）", (int)HUSKY_ALGORITHM_ID);
 
     /* 硬件先初始化，且保证电机处于停止态 */
     motors_init();

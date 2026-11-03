@@ -32,12 +32,14 @@ typedef struct {
     uint32_t ovf_count;    /* 栈溢出次数 */
     char     ovf_task[16]; /* 发生栈溢出的任务名 */
     uint8_t  cfg_reset;    /* 1 = 由 config.set 主动复位 */
+    uint8_t  net_reset;    /* 1 = 网络看门狗触发的自动复位 */
 } LCD_DiagRaw_t;
 
 typedef struct {
     uint32_t ovf_count;    /* 上次运行：栈溢出次数 */
     char     ovf_task[16]; /* 上次运行：溢出任务名 */
     uint8_t  cfg_reset;    /* 上次运行：是否 config.set 复位 */
+    uint8_t  net_reset;    /* 上次运行：是否网络看门狗复位 */
     uint32_t crash_stage;  /* 上次运行最后阶段码 */
 } LCD_DiagView_t;
 
@@ -55,5 +57,8 @@ void LCD_Diag_Overflow(const char *task_name);
 
 /* config.set 主动复位前调用 */
 void LCD_Diag_ConfigReset(void);
+
+/* 网络看门狗触发整机自动复位前调用（重启后屏上显示 NETRST） */
+void LCD_Diag_NetReset(void);
 
 #endif
