@@ -9,10 +9,40 @@
  * - **确认/拒绝** → 先经总线投递回 Python（留痕），再直连 Python 确认接口
  *   （动作要低延迟，且不能被消息重投触发二次开闸）。
  *
- * 服务地址由 VITE_BRAIN_BASE_URL 配置；同域部署时留空由 Nginx 反代。
+ * 地址解析顺序（见 resolveBaseUrl）：
+ *   1. `VITE_BRAIN_BASE_URL` 显式配置 → 原样使用；
+ *   2. 否则用同源相对路径 `/brain` —— 生产由 Nginx 反代到 Python，
+ *      这样 HTTPS 页面不会因混合内容被浏览器拦掉；
+ *   3. 本地 `npm run dev`（localhost）时没有 Nginx，退回直连 127.0.0.1:5001。
  */
 
-const BASE_URL = (import.meta.env.VITE_BRAIN_BASE_URL ?? 'http://127.0.0.1:5001').replace(/\/+$/, '')
+/**
+ * 计算 Python 服务的基地址。
+ *
+ * **为什么生产必须走同源**：页面是 https，Python 是 http。
+ * 浏览器会按混合内容拦截 https 页面发起的 http 请求——这不是网络问题，
+ * 是规范强制的，业务代码无法绕过。所以线上只能靠 Nginx 把 /brain
+ * 反代到本机（或隧道映射的）5001，让请求变成同源 https。
+ */
+function resolveBaseUrl() {
+  const configured = import.meta.env.VITE_BRAIN_BASE_URL
+  if (configured) {
+    // 空字符串是合法配置，表示"用同源相对路径"
+    return String(configured).replace(/\/+$/, '')
+  }
+
+  if (typeof window !== 'undefined' && window.location) {
+    const { protocol, hostname } = window.location
+    const isLocal = hostname === 'localhost' || hostname === '127.0.0.1'
+    // 本地开发：Vite 没有 /brain 代理，直连 Python 更省事
+    if (isLocal && protocol === 'http:') return 'http://127.0.0.1:5001'
+    // 线上：同源，交给 Nginx
+    return '/brain'
+  }
+  return 'http://127.0.0.1:5001'
+}
+
+const BASE_URL = resolveBaseUrl()
 
 /** 与服务端 `API_TOKEN` 对应的共享密钥。留空表示服务未开启鉴权 */
 const TOKEN = import.meta.env.VITE_BRAIN_TOKEN ?? ''
