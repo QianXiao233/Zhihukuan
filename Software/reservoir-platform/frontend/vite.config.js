@@ -9,6 +9,15 @@ import vue from '@vitejs/plugin-vue'
  */
 const BACKEND_ORIGIN = process.env.VITE_BACKEND_ORIGIN || 'http://127.0.0.1:8085'
 
+/**
+ * MQTT broker 的 WebSocket 端点，供前端 `mqttUrl()` 的同源反代使用。
+ *
+ * 生产环境由 Nginx 把 `/mqtt` 反代到 EMQX 的 8083；本地开发没有 Nginx，
+ * 就由 Vite 代劳。所以这里默认指向本地 broker 的 ws 监听端口。
+ * 换机器时用 VITE_MQTT_WS_ORIGIN 覆盖即可。
+ */
+const MQTT_WS_ORIGIN = process.env.VITE_MQTT_WS_ORIGIN || 'ws://127.0.0.1:8083'
+
 export default defineConfig({
   plugins: [vue()],
   build: {
@@ -42,6 +51,12 @@ export default defineConfig({
       // 健康检查
       '/health': {
         target: BACKEND_ORIGIN,
+        changeOrigin: true,
+      },
+      // MQTT over WebSocket：前端 mqttUrl() 在未显式配置时用同源 /mqtt
+      '/mqtt': {
+        target: MQTT_WS_ORIGIN,
+        ws: true,
         changeOrigin: true,
       },
     },

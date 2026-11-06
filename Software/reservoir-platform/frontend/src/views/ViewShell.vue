@@ -6,7 +6,7 @@
       <div class="platform-brand">
         <div class="platform-brand__mark"><span></span><span></span><span></span></div>
         <div>
-          <strong>智御安澜</strong>
+          <strong>智护库安</strong>
           <small>水库数字化运营工作台</small>
         </div>
       </div>
@@ -98,6 +98,7 @@ import {
   DashboardOutlined,
   DatabaseOutlined,
   DownOutlined,
+
   FileProtectOutlined,
   FundProjectionScreenOutlined,
   MenuOutlined,

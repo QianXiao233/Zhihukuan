@@ -21,11 +21,11 @@
   flex: 0 0 252px;
   display: flex;
   flex-direction: column;
-  padding: 24px 14px 16px;
+  padding: 24px 14px 12px;
   color: #eaf6ff;
   background: linear-gradient(180deg, #0a2948 0%, #061b32 62%, #05172b 100%);
   box-shadow: 8px 0 24px rgba(8, 35, 62, 0.12);
-  overflow-y: auto;
+  overflow: hidden;
   overscroll-behavior: contain;
 }
 
@@ -61,15 +61,25 @@
 @keyframes dam-menu-in { from { opacity: 0; transform: translateY(-4px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
 
 .platform-nav__label { margin: 26px 12px 8px; color: #6e95b5; font-size: 11px; letter-spacing: .1em; }
-.platform-nav { display: flex; flex-direction: column; gap: 4px; }
+.platform-nav__label:first-child { margin-top: 14px; }
+.platform-nav { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; overflow-x: hidden; padding-right: 2px; }
+/* 侧栏是深色底，必须单独给滚动条配色：全局 ::-webkit-scrollbar 是浅色主题的青蓝色，
+   而一旦声明 scrollbar-width，Chrome 会改用系统原生滚动条（白底粗条），这里显式覆盖。 */
+.platform-nav::-webkit-scrollbar { width: 5px; }
+.platform-nav::-webkit-scrollbar-track { background: transparent; }
+.platform-nav::-webkit-scrollbar-thumb { background: rgba(150, 195, 225, .26); border-radius: 3px; }
+.platform-nav::-webkit-scrollbar-thumb:hover { background: rgba(150, 195, 225, .45); }
+@supports not selector(::-webkit-scrollbar) {
+  .platform-nav { scrollbar-width: thin; scrollbar-color: rgba(150, 195, 225, .32) transparent; }
+}
 .platform-nav__item { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 0 13px; border: 0; border-radius: 10px; background: transparent; color: #a9c3d8; font-size: 14px; text-align: left; cursor: pointer; transition: .2s ease; }
 .platform-nav__item:hover { color: #fff; background: rgba(39, 150, 226, .15); }
 .platform-nav__item.is-active { color: #fff; background: linear-gradient(90deg, #1377dc, #1684d9); box-shadow: 0 7px 17px rgba(17, 113, 212, .26); }
 .platform-nav__icon { width: 18px; font-size: 17px; }
 .platform-nav__badge { margin-left: auto; min-width: 19px; padding: 0 5px; border-radius: 10px; background: #ff6b56; color: #fff; font-size: 10px; font-style: normal; text-align: center; }
 
-.platform-sidebar__footer { margin-top: auto; }
-.platform-health { display: grid; grid-template-columns: 9px auto; column-gap: 8px; align-items: center; padding: 12px 12px 13px; border-top: 1px solid rgba(143, 190, 221, .13); color: #c5dced; font-size: 11px; }
+.platform-sidebar__footer { flex: 0 0 auto; }
+.platform-health { display: grid; grid-template-columns: 9px auto; column-gap: 8px; align-items: center; padding: 10px 12px 11px; border-top: 1px solid rgba(143, 190, 221, .13); color: #c5dced; font-size: 11px; }
 .platform-health i { width: 7px; height: 7px; border-radius: 50%; background: #31d9a1; box-shadow: 0 0 0 4px rgba(49, 217, 161, .12); }
 .platform-health i.is-offline { background: #fb7b70; box-shadow: 0 0 0 4px rgba(251, 123, 112, .12); }
 .platform-health i.is-pending { background: #e9b650; box-shadow: 0 0 0 4px rgba(233, 182, 80, .12); }

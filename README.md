@@ -8,6 +8,7 @@ Zhihukuan/
 │   ├── reservoir-platform/
 │   │   ├── frontend/            # Vue 水库数字人和管理界面；src 内按页面、组件、语音、API 分类
 │   │   ├── backend/             # Spring Boot API、鉴权、设备/参数管理、MQTT、数据库
+│   │   ├── inference/           # AI 闸门决策服务：LSTM 世界模型 + MPC 规划 + 在线学习
 │   │   └── speech-recognition/  # FunASR 本地语音识别服务
 │   └── boat-rescue-console/
 │       ├── dashboard/           # React 无人艇网页驾驶台
@@ -37,6 +38,11 @@ Zhihukuan/
 - 水库前端：在 `Software/reservoir-platform/frontend/` 执行 `npm run dev` 或 `npm run build`；`/boat` 页是平台原生的 Vue 驾驶台（`views/BoatView.vue`），`Software/boat-rescue-console` 的 React 控制台保留为独立调试工具。
 - 部署：前端/后端上线步骤见 `Software/reservoir-platform/deploy/README.md`（站点根为 `/www/wwwroot/zhka/h5/reservoir-platform`）。
 - 水库后端：在 `Software/reservoir-platform/backend/` 使用 `mvnw.cmd test`。
+- AI 闸门决策：在 `Software/reservoir-platform/inference/` 安装 `requirements.txt` 后运行 `python -m uvicorn server:app --port 5001`；说明见该目录 `README.md`。
+  - 该服务**直接通过 MQTT 控制 4 个并联闸门**（`rtu/status` 上报、`rtu/control` 下发），不经过 Java 后端；
+  - 决策按档位输出 0~4（开几个门），由协调器分配到具体闸门并轮换均衡磨损；
+  - `DISPATCH_CONTROL` 默认 `false`（只观察不动作），确认决策合理后再打开；
+  - 单元测试 `python -m unittest discover -s tests`；端到端验收 `python tests/e2e_mqtt.py`（需 `pip install amqtt`）。
 - 本地语音识别：安装 `Software/reservoir-platform/speech-recognition/requirements.txt` 后，进入该目录运行 `python asr_server.py`。
 - ESP-IDF 船端固件：分别进入 `Hardware/Firmware/boat/bridge-idf/` 或 `Hardware/Firmware/boat/controller-idf/`，使用各自的 `idf-env.ps1` 和 ESP-IDF 工具链。
 - STM32F407 固件：工程入口为 `Hardware/Firmware/daba/CMakeLists.txt`，芯片配置见 `Hardware/Firmware/daba/daba.ioc`。

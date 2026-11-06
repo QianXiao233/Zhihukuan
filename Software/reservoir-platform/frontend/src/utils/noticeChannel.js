@@ -90,6 +90,15 @@ function scheduleReconnect() {
 
 function receive(message) {
   const payload = message.payload || {}
+
+  // AI 决策服务投递的"待确认开闸请求"走独立通道：
+  // 它不是普通通知（不需要"我知道了"式确认，也不需要进未读队列），
+  // 而是需要运维做**开闸决策**的待办，交给全局确认弹窗处理。
+  if (message.type === 'brain.approval_request') {
+    notifyApproval(payload)
+    return
+  }
+
   handleNotice({
     id: payload.messageId || message.msgId,
     title: payload.title || message.type || '平台通知',
@@ -101,6 +110,18 @@ function receive(message) {
     messageId: payload.messageId,
     topic: message.topic,
   })
+}
+
+/**
+ * 转发待确认开闸请求给全局弹窗。
+ *
+ * 用 window 事件解耦而不是直接 import composable：
+ * noticeChannel 是纯工具模块，让它在模块加载期就依赖 Vue 组合式状态，
+ * 会让单元测试和 SSR 都变麻烦；事件总线的耦合更松。
+ */
+function notifyApproval(payload) {
+  if (!payload || !payload.requestId) return
+  window.dispatchEvent(new CustomEvent('brain-approval-request', { detail: payload }))
 }
 
 /** 去重后入队：同一条通知可能同时来自 SSE 和登录补弹 */

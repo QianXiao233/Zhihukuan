@@ -147,6 +147,15 @@ datasets/
 # 视觉模型：权重不入库（*.onnx / models/ 已忽略），但说明文档要入库
 !Software/boat-rescue-console/vision/models/
 !Software/boat-rescue-console/vision/models/README.md
+# 决策大脑模型：世界模型权重是关键资产，必须入库；
+# 在线学习产生的中间检查点只留在本机
+!Software/reservoir-platform/inference/models/
+!Software/reservoir-platform/inference/models/world_model.pt
+Software/reservoir-platform/inference/data/checkpoints/
+Software/reservoir-platform/inference/data/*.npy
+# 本地起服务时重定向的日志，属于运行痕迹
+Software/reservoir-platform/inference/_*.log
+Software/reservoir-platform/inference/_*.err
 
 # ---------- 视觉训练与实验产物 ----------
 # training/ 含原始数据集、导出的 CSV 与权重，实测约 4.8 GB，绝不入库
@@ -158,6 +167,17 @@ Software/boat-rescue-console/vision/runs/
 _tools/
 _acl-recovery/
 _dsh-acl-recovery/
+
+# ---------- 原型归档：智慧大坝 ----------
+# 这是迁移来源的原始工程，只保留源码与训练脚本；编译产物、虚拟环境、
+# IDE 配置与数据集不入库（PyInstaller 的 build/dist 就占 19.5 MB）。
+# 注意排除顺序：先忽略目录内容，再让源码重新纳入。
+智慧大坝/build/
+智慧大坝/dist/
+智慧大坝/__pycache__/
+智慧大坝/.idea/
+智慧大坝/*.log
+智慧大坝/training_data*.npy
 
 # ---------- 误创建的空文件 ----------
 # vision/ 下这几个 0 字节文件是命令拼错留下的，删掉前先别让它们进库

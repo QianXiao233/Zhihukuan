@@ -5,11 +5,14 @@
     </transition>
   </router-view>
   <NoticePopup />
+  <!-- 开闸确认弹窗挂在根节点：任意页面都要能收到，不能因为在别的页就错过 -->
+  <GlobalApprovalModal />
 </template>
 
 <script setup>
 import { onBeforeUnmount, onMounted } from 'vue'
 import NoticePopup from './components/NoticePopup.vue'
+import GlobalApprovalModal from './components/GlobalApprovalModal.vue'
 import { startNoticeChannel, stopNoticeChannel } from './utils/noticeChannel.js'
 
 // 登录后订阅平台通知频道；多标签页登录/退出时同步连接状态

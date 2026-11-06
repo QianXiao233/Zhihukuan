@@ -1,0 +1,20 @@
+# ========================================
+# 智慧大坝决策大脑（inference 服务）依赖
+# ========================================
+# 安装方式：
+#   1) 先装 PyTorch（有 NVIDIA 显卡时用 CUDA 版，否则用 CPU 版）
+#      pip install torch --index-url https://download.pytorch.org/whl/cu128
+#   2) 再装其余依赖：
+#      pip install -r requirements.txt
+#
+# 注意：模型检查点是在 torch 2.x 下保存的，
+# 读取时使用 weights_only=False（需要读取检查点内的标量元数据），
+# 因此只支持 PyTorch 2.0 及以上版本。
+# ========================================
+
+numpy>=1.24,<3.0
+torch>=2.0
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pydantic>=2.6
+paho-mqtt>=2.0
