@@ -30,8 +30,8 @@ class BusConfigTest(unittest.TestCase):
 
     def test_defaults_match_backend_protocol(self):
         cfg = BusConfig()
-        self.assertEqual(cfg.pending_topic, "brain.pending")
-        self.assertEqual(cfg.approval_topic, "brain.approval")
+        self.assertEqual(cfg.pending_topic, "ui.brain.approval")
+        self.assertEqual(cfg.approval_topic, "ui.brain.result")
 
 
 class BusClientTest(unittest.TestCase):

@@ -246,6 +246,7 @@ def health() -> dict[str, Any]:
         "status": "ok",
         "ready": brain is not None and brain.status()["ready"],
         "mqtt": bridge.stats() if bridge else None,
+        "bus": bus.stats() if bus else None,
     }
 
 
@@ -276,6 +277,7 @@ def get_status() -> dict[str, Any]:
         # 平台接入字段
         "brain": snap,
         "mqtt": bridge.stats() if bridge else None,
+        "bus": bus.stats() if bus else None,
     }
 
 

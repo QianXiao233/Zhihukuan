@@ -45,8 +45,22 @@ class BusConfig:
     base_url: str = ""
     client_id: str = ""
     client_secret: str = ""
-    pending_topic: str = "brain.pending"
-    approval_topic: str = "brain.approval"
+
+    pending_topic: str = "ui.brain.approval"
+    """待确认请求的主题。
+
+    **必须以 ``ui.`` 开头**。后端 `BusController#ticket` 把浏览器票据的主题
+    硬编码成 ``ui.#``（这是安全设计：页面只能收用户通知，不能偷看服务间的
+    ``alarm.*``、``device.*`` 等业务消息）。如果发到 ``brain.pending``，
+    前端订阅 ``ui.#`` 匹配不到，弹窗永远不会出现——而且不会报错，只是静默收不到。
+
+    发到 ``ui.brain.approval`` 既落在浏览器可见范围内，又保留 ``brain``
+    命名空间做区分。
+    """
+
+    approval_topic: str = "ui.brain.result"
+    """确认/拒绝结果的留痕主题。同样在 ``ui.`` 下，便于前端展示处理结果。"""
+
     timeout: float = 5.0
 
     @property
@@ -64,8 +78,8 @@ class BusConfig:
             base_url=env("BUS_BASE_URL").rstrip("/"),
             client_id=env("BUS_CLIENT_ID"),
             client_secret=env("BUS_CLIENT_SECRET"),
-            pending_topic=env("BUS_PENDING_TOPIC", "brain.pending"),
-            approval_topic=env("BUS_APPROVAL_TOPIC", "brain.approval"),
+            pending_topic=env("BUS_PENDING_TOPIC", "ui.brain.approval"),
+            approval_topic=env("BUS_APPROVAL_TOPIC", "ui.brain.result"),
             timeout=float(env("BUS_TIMEOUT", "5") or 5),
         )
 
@@ -83,6 +97,8 @@ class BusClient:
         self.published = 0
         self.last_error: str | None = None
         self.last_published_at: float | None = None
+        self._fail_streak = 0
+        """连续失败次数，用于日志降噪"""
 
         if cfg.enabled:
             log.info("总线已启用：%s（client=%s, topic=%s）",
@@ -128,6 +144,7 @@ class BusClient:
                         self.last_error = None
                         import time
                         self.last_published_at = time.time()
+                        self._fail_streak = 0
                     log.debug("总线已发布 %s", topic)
                     return True
                 self.last_error = f"HTTP {resp.status}"
@@ -140,13 +157,31 @@ class BusClient:
             except Exception:
                 pass
             self.last_error = f"HTTP {exc.code} {detail}"
-            log.warning("总线发布被拒（%s）：%s %s", topic, exc.code, detail)
+            self._log_failure(topic, f"HTTP {exc.code} {detail}")
             return False
         except Exception as exc:
-            # 网络不通、DNS 失败等：不能影响主链路，只记日志
             self.last_error = str(exc)
-            log.warning("总线不可达（%s）：%s", topic, exc)
+            self._log_failure(topic, str(exc))
             return False
+
+    def _log_failure(self, topic: str, detail: str) -> None:
+        """失败日志降噪。
+
+        待确认请求会在水位越界期间**每帧**触发（约 1.5 秒一次）。如果总线权限
+        没配好，逐条打 warn 会几秒钟刷满日志，把真正有用的信息挤掉。
+        这里只在前 3 次和每 60 次打一条，并在文案里说明已进入降噪模式。
+        """
+        with self._lock:
+            self._fail_streak += 1
+            streak = self._fail_streak
+
+        if streak <= 3:
+            log.warning("总线发布被拒（%s）：%s", topic, detail)
+        elif streak % 60 == 0:
+            log.warning(
+                "总线发布持续失败 %d 次（%s）：%s —— 已降噪，检查客户端发布权限",
+                streak, topic, detail,
+            )
 
     # ── 观测 ──────────────────────────────────────────────────
 
