@@ -145,26 +145,94 @@ chown -R www:www reservoir-platform
 
 整站备份：`/root/zhka-frontend-backup-20261106-102310.tar.gz`
 
-## 待办：总线客户端尚未配置
+## 总线客户端配置
 
-全局开闸确认弹窗依赖服务接入总线推送 `brain.approval_request` 事件。
-目前 `BUS_CLIENT_ID` / `BUS_CLIENT_SECRET` 为空，所以**弹窗不会自动出现**
-（决策照常运行，只是待确认请求推不到前端）。
-
-启用步骤：
-
-1. 管理员登录平台 →「管理中心 → 服务接入」→ 新建客户端
-   - `client_id`：`dam-brain`
-   - `allow_publish`：`brain.#`
-   - `allow_subscribe`：`none`
-2. 保存返回的 secret（只显示一次）
-3. 启动 Python 服务时加上：
+在「管理中心 → 服务接入」创建客户端后，把凭据填到 Python 服务的环境变量：
 
 ```powershell
-$env:BUS_BASE_URL="http://81.70.63.53:8085"
+$env:BUS_BASE_URL="https://platform.zhka.qianxiao.xin"
 $env:BUS_CLIENT_ID="dam-brain"
 $env:BUS_CLIENT_SECRET="<创建时返回的密钥>"
 ```
+
+### 权限必须包含两个主题
+
+`allow_publish` 要写：
+
+```
+brain.#,ui.brain.approval,ui.brain.result
+```
+
+**为什么必须先 `ui.`**：后端 `BusController#ticket` 把浏览器票据的主题硬编码成
+`ui.#`（安全设计：页面只能收用户通知，不能偷看服务间的 `alarm.*`、`device.*`）。
+如果发布到 `brain.pending`，前端订阅 `ui.#` 匹配不到——**弹窗永远不会出现，
+而且不报错，只是静默收不到**。这个坑排查起来很费时间。
+
+### 后端地址用域名而不是 IP:8085
+
+后端只监听回环（安全要求），公网访问不到 `81.70.63.53:8085`。
+`BUS_BASE_URL` 必须写 `https://platform.zhka.qianxiao.xin`，经 nginx 转发。
+
+### 「待投递」数字只增不减的问题（已修复）
+
+**现象**：页面已经收到通知并弹窗，但「服务接入」页的待投递数一直往上涨。
+实测累积 188 条，而 `/api/bus/pull` 返回 0 条。
+
+**根因**：旧版 `publish()` 不区分广播与队列消息，一律落成 `pending`。
+`ui.*` 是 SSE 扇出，没有服务会去 ack，于是永久停留在待投递。
+
+**修复**（commit `7234ac1`）：
+
+- `ui.*` 消息写库时直接记 `delivered`——广播出去就算投递完成
+- 不再为广播消息唤醒长轮询
+- 新增 `POST /api/manage/bus/fix-broadcast` 修正历史数据
+
+清理历史遗留数据（管理员登录后在浏览器 Console 执行）：
+
+```js
+fetch('/api/manage/bus/fix-broadcast', {
+  method: 'POST',
+  headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+}).then(r => r.json()).then(console.log)
+```
+
+判定用 `topic === "ui" || topic.startsWith("ui.")`，避免把 `uix.foo` 误判成广播。
+
+## 后端部署方式（宝塔托管，注意）
+
+后端由 systemd 服务 `spring_ai-backend` 托管，**`Restart=always`**：
+
+```bash
+systemctl cat spring_ai-backend
+```
+
+因此**不能用 `kill` 停止**——杀完立刻被拉起。而且如果拉起时 jar 正被覆盖，
+会加载到损坏的镜像，报 `ClassNotFoundException: ch.qos.logback.classic.spi.ThrowableProxy`
+（看起来像依赖冲突，其实是文件读写竞争）。
+
+正确流程：
+
+```bash
+cd /www/wwwroot/zhka/backend/dam-server
+
+# 1. 先停服务（不要 kill）
+systemctl stop spring_ai-backend
+sleep 5
+
+# 2. 替换 jar
+cp /root/zhka-upload2/dam-server-2.0.1.jar.new dam-server-2.0.1.jar
+chown www:www dam-server-2.0.1.jar
+unzip -t dam-server-2.0.1.jar | tail -1     # 确认无损坏
+
+# 3. 再启动
+systemctl start spring_ai-backend
+sleep 40
+
+# 4. 验证
+curl -s http://127.0.0.1:8085/health
+```
+
+日志在 `/www/wwwlogs/java/springboot/ai-backend.log`（不是 `reservoir-backend.log`）。
 
 ## 已知局限
 
