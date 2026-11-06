@@ -101,6 +101,22 @@ public class BusService {
     public record PullResult(List<BusMessageView> messages) {
     }
 
+    /**
+     * 浏览器广播频道的主题前缀。
+     *
+     * <p>{@code ui.*} 的消息只走 SSE 扇出给页面，**不进入竞争消费队列**。
+     * 它们没有消费方，也永远不会被 ack——如果按普通消息落成 pending，
+     * 会一直躺在「待投递」里，让运维误以为队列堵了
+     * （实测发布 27 条通知后待投递数就是 27，但页面其实每条都收到了）。
+     *
+     * <p>修复方式：写库时直接记为 {@link BusMessage#STATUS_DELIVERED}，
+     * 因为对这类消息来说「已经广播出去」就等于投递完成。
+     * 保留入库是为了让「服务接入」页还能看到推送记录，便于排查。
+     */
+    private static boolean isBroadcastTopic(String topic) {
+        return topic != null && (topic.equals("ui") || topic.startsWith("ui."));
+    }
+
     /** 发布一条消息：校验主题与大小 → 落库 → 唤醒消费者并广播给浏览器 */
     public BusMessage publish(BusClient sender, PublishCommand command) {
         return publish(sender.getClientId(), command, null);
@@ -161,7 +177,11 @@ public class BusService {
         message.setAudience(audience);
         message.setPayload(payload);
         message.setCorrelationId(correlationId);
-        message.setStatus(BusMessage.STATUS_PENDING);
+
+        // 广播类消息（ui.*）没有消费方，写库即视为投递完成，
+        // 否则会永远堆在 pending 里，看起来像队列堵了。
+        boolean broadcast = isBroadcastTopic(topic);
+        message.setStatus(broadcast ? BusMessage.STATUS_DELIVERED : BusMessage.STATUS_PENDING);
         message.setAttempts(0);
         message.setNextAttemptAt(now);
         message.setCreatedAt(now);
@@ -169,7 +189,10 @@ public class BusService {
         message.setExpiresAt(now.plusSeconds(ttlSeconds));
 
         query.insert(message);
-        signal();
+        if (!broadcast) {
+            // 只有真正需要消费方领取的消息才唤醒长轮询
+            signal();
+        }
         // 广播给浏览器：和队列的竞争消费互不影响，每个页面都能收到
         subscriptions.broadcast(message);
         log.debug("[总线] {} 发布 {} -> {}（msgId={}）", source, topic, target, message.getMsgId());
@@ -227,6 +250,20 @@ public class BusService {
 
     public Map<String, Long> counts() {
         return query.counts();
+    }
+
+    /**
+     * 修正历史的广播消息：把 {@code ui.*} 里仍是 pending 的记为 delivered。
+     *
+     * <p>旧版本不区分广播与队列消息，导致浏览器通知永远堆在「待投递」。
+     * 供给管理页手动触发一次即可，之后新消息走修复后的逻辑。
+     */
+    public long fixBroadcastPending() {
+        long fixed = query.markBroadcastAsDelivered();
+        if (fixed > 0) {
+            log.info("[总线] 已把 {} 条历史广播消息（ui.*）标记为已投递", fixed);
+        }
+        return fixed;
     }
 
     private void signal() {

@@ -227,4 +227,27 @@ public class BusMessageQueryRepository {
         counts.put("total", total);
         return counts;
     }
+
+    /**
+     * 把历史遗留的广播消息（{@code ui.*} 且仍为 pending）纠正为 delivered。
+     *
+     * <p>为什么要做这次修正：修复前所有消息一律落成 pending，而 {@code ui.*}
+     * 是 SSE 广播、没有消费方，于是永远躺在「待投递」里。实测累积了 188 条，
+     * 让运维误以为队列堵了——但 {@code /api/bus/pull} 返回 0 条，
+     * 因为确实没有任何客户端能领走它们。
+     *
+     * <p>修复后的新消息已经直接记 delivered，这里只清理旧数据。
+     * 幂等：重复执行不会改到别的东西。
+     *
+     * @return 被纠正的条数
+     */
+    public long markBroadcastAsDelivered() {
+        Query query = new Query(Criteria.where("status").is(BusMessage.STATUS_PENDING)
+                .orOperator(
+                        Criteria.where("topic").is("ui"),
+                        Criteria.where("topic").regex("^ui\\.")));
+        Update update = new Update().set("status", BusMessage.STATUS_DELIVERED)
+                .set("updatedAt", Instant.now());
+        return mongo.updateMulti(query, update, BusMessage.class).getModifiedCount();
+    }
 }

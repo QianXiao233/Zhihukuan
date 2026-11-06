@@ -136,4 +136,25 @@ public class ManageBusController extends AbstractManageController {
         data.put("clients", clients.list());
         return okWithData(user, data);
     }
+
+    /**
+     * 修正历史遗留的广播消息（{@code ui.*} 且仍为 pending）。
+     *
+     * <p>旧版本把所有消息一律落成 pending，而浏览器广播（ui.*）没有消费方，
+     * 会永远堆在「待投递」里，看起来像队列堵了。此接口把这批旧数据纠正为
+     * delivered，只影响 ui.* 主题，不动服务间消息。幂等，可重复执行。
+     */
+    @PostMapping("/fix-broadcast")
+    public Map<String, Object> fixBroadcast(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        var user = currentUser(authorization);
+        if (user == null) {
+            return tokenInvalid();
+        }
+        long fixed = bus.fixBroadcastPending();
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("fixed", fixed);
+        data.put("counts", bus.counts());
+        return okWithData(user, data);
+    }
 }
